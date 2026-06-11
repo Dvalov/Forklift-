@@ -216,3 +216,93 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Виртуальное окружение
+.venv/
+
+venv/
+
+env/
+
+ENV/
+
+.env/
+
+# Базы данных SQLite (везде)
+
+*.sqlite3
+
+db.sqlite3
+
+**/db.sqlite3
+
+# Python кэш
+
+__pycache__/
+
+*.py[cod]
+
+*$py.class
+
+*.so
+
+.Python
+
+# Файлы настроек с секретами (нужно создать отдельные файлы)
+
+**/settings_local.py
+
+**/settings_secret.py
+
+Converter/Converter/.env
+
+**/secret_key.txt
+
+config.local.py
+
+# Логи и временные файлы
+
+*.log
+
+*.tmp
+
+*.pid
+
+# Медиа и статика
+
+media/
+
+staticfiles/
+
+static_collected/
+
+# Файлы IDE
+
+.vscode/
+
+.idea/
+
+*.swp
+
+*.swo
+
+*~
+
+.DS_Store
+
+# PyCharm
+
+.idea/
+
+*.iml
+
+# mypy
+
+.mypy_cache/
+
+.dmypy.json
+
+dmypy.json
+
+# pytest
+
+.pytest_cache/
