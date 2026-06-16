@@ -253,7 +253,7 @@ __pycache__/
 
 **/settings_secret.py
 
-Converter/Converter/.env
+Converter/.env
 
 **/secret_key.txt
 
@@ -306,3 +306,11 @@ dmypy.json
 # pytest
 
 .pytest_cache/
+
+# GSD planning
+.planning/
+/.planning/
+
+# Allow frontend/src/lib (not a Python lib dir)
+!frontend/src/lib/
+!frontend/src/lib/**
