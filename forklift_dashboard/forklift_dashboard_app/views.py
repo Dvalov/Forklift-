@@ -130,42 +130,32 @@ class TaskViewSet(viewsets.ModelViewSet):
         return queryset
 
     def create(self, request, *args, **kwargs):
-        """Создание задания с конвертацией cell_address"""
         serializer = TaskCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            cell_address = serializer.validated_data['cell_address']
-            # Получаем координаты из внешней системы
-            coords =cell_address
+        data = serializer.validated_data
+        forklift = None
+        if data.get('forklift_id'):
+            try:
+                forklift = Forklift.objects.get(pk=data['forklift_id'])
+            except Forklift.DoesNotExist:
+                return Response({"error": "Forklift not found"}, status=status.HTTP_400_BAD_REQUEST)
 
-            task = Task.objects.create(
-                dest_x=coords['x'],
-                dest_y=coords['y'],
-                dest_z=coords['z'],
-                origin_x=0,
-                origin_y=0,
-                origin_z=0
-            )
+        task = Task.objects.create(
+            forklift=forklift,
+            dest_x=data['dest_x'],
+            dest_y=data['dest_y'],
+            dest_z=data['dest_z'],
+            dest_cell_x=data['dest_cell_x'],
+            dest_cell_y=data['dest_cell_y'],
+            dest_cell_z=data['dest_cell_z'],
+            origin_x=data['origin_x'],
+            origin_y=data['origin_y'],
+            origin_z=data['origin_z'],
+        )
 
-            return Response({
-                'message': 'Task created successfully',
-                'id': task.id,
-                'forklift_id': task.forklift.id if task.forklift else None,
-                'status': task.status,
-                'origin_x': task.origin_x,
-                'origin_y': task.origin_y,
-                'origin_z': task.origin_z,
-                'dest_x': task.dest_x,
-                'dest_y': task.dest_y,
-                'dest_z': task.dest_z,
-                'created_at': task.created_at,
-                'updated_at': task.updated_at
-            }, status=status.HTTP_201_CREATED)
-
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(TaskSerializer(task).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
         """Обновление задания (только если pending)"""

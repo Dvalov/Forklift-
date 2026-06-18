@@ -5,14 +5,14 @@ from .models import Forklift, Task
 class ForkliftSerializer(serializers.ModelSerializer):
     class Meta:
         model = Forklift
-        fields = ['id', 'name', 'status', 'position_x', 'position_y', 'position_z', 'updated_at']
+        fields = ['id', 'name', 'charge_level', 'status', 'position_x', 'position_y', 'position_z', 'updated_at']
         read_only_fields = ['id', 'updated_at']
 
 
 class ForkliftUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Forklift
-        fields = ['id', 'name', 'status', 'position_x', 'position_y', 'position_z', 'updated_at']
+        fields = ['id', 'name', 'charge_level', 'status', 'position_x', 'position_y', 'position_z', 'updated_at']
         read_only_fields = ['id', 'updated_at']
 
 
@@ -23,24 +23,25 @@ class PositionUpdateSerializer(serializers.Serializer):
 
 
 class TaskSerializer(serializers.ModelSerializer):
-    forklift_id = serializers.IntegerField(source='forklift.id', read_only=True)
-
     class Meta:
         model = Task
         fields = ['id', 'forklift_id', 'status', 'origin_x', 'origin_y', 'origin_z',
-                  'dest_x', 'dest_y', 'dest_z', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+                  'dest_x', 'dest_y', 'dest_z', 'dest_cell_x', 'dest_cell_y', 'dest_cell_z',
+                  'created_at', 'updated_at']
+        read_only_fields = ['id', 'forklift_id', 'created_at', 'updated_at']
 
 
 class TaskCreateSerializer(serializers.Serializer):
-    cell_address = serializers.DictField(child=serializers.IntegerField())
-
-    def validate_cell_address(self, value):
-        required_fields = ['row', 'height', 'depth']
-        for field in required_fields:
-            if field not in value:
-                raise serializers.ValidationError(f"Missing field: {field}")
-        return value
+    forklift_id = serializers.IntegerField(required=False, allow_null=True, default=None)
+    dest_x = serializers.FloatField()
+    dest_y = serializers.FloatField()
+    dest_z = serializers.FloatField()
+    dest_cell_x = serializers.IntegerField()
+    dest_cell_y = serializers.IntegerField()
+    dest_cell_z = serializers.IntegerField()
+    origin_x = serializers.FloatField(required=False, default=0)
+    origin_y = serializers.FloatField(required=False, default=0)
+    origin_z = serializers.FloatField(required=False, default=0)
 
 
 class TaskUpdateSerializer(serializers.ModelSerializer):

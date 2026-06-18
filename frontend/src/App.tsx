@@ -1,3 +1,5 @@
+import ForkliftStatusPanel from '@/components/ForkliftStatus/ForkliftStatusPanel'
+
 function App() {
   return (
     <div className="flex h-screen bg-surface text-gray-100 overflow-hidden">
@@ -16,8 +18,8 @@ function App() {
         <header className="px-6 py-4 border-b border-gray-800">
           <h1 className="text-lg font-semibold text-gray-100">Forklift Status</h1>
         </header>
-        <div className="flex-1 px-6 py-4">
-          <p className="text-gray-400 text-sm">Status panel coming in Phase 4</p>
+        <div className="flex-1">
+          <ForkliftStatusPanel />
         </div>
       </main>
     </div>

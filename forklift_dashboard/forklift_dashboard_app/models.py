@@ -14,6 +14,7 @@ class Forklift(models.Model):
     id=models.AutoField(primary_key=True)
     name = models.CharField(max_length=100)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='idle')
+    charge_level = models.FloatField(default=0)
     position_x = models.FloatField(default=0)
     position_y = models.FloatField(default=0)
     position_z = models.FloatField(default=0)
@@ -48,6 +49,7 @@ class Task(models.Model):
     forklift_id = models.ForeignKey(Forklift, on_delete=models.SET_NULL, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
 
+
     origin_x = models.FloatField(default=0)
     origin_y = models.FloatField(default=0)
     origin_z = models.FloatField(default=0)
@@ -55,6 +57,7 @@ class Task(models.Model):
     dest_x = models.FloatField()
     dest_y = models.FloatField()
     dest_z = models.FloatField()
+
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
