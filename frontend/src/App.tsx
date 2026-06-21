@@ -1,4 +1,5 @@
 import ForkliftStatusPanel from '@/components/ForkliftStatus/ForkliftStatusPanel'
+import TaskListPanel from '@/components/TaskList/TaskListPanel'
 
 function App() {
   return (
@@ -8,8 +9,8 @@ function App() {
         <header className="px-6 py-4 border-b border-gray-800">
           <h1 className="text-lg font-semibold text-gray-100">Tasks</h1>
         </header>
-        <div className="flex-1 px-6 py-4">
-          <p className="text-gray-400 text-sm">Task list coming in Phase 5</p>
+        <div className="flex-1 overflow-y-auto">
+          <TaskListPanel />
         </div>
       </aside>
 

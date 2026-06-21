@@ -46,7 +46,7 @@ class Task(models.Model):
         ('cancelled', 'Cancelled'),
     ]
 
-    forklift_id = models.ForeignKey(Forklift, on_delete=models.SET_NULL, null=True, blank=True)
+    forklift = models.ForeignKey(Forklift, on_delete=models.SET_NULL, null=True, blank=True, related_name='tasks')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
 
 
@@ -58,6 +58,9 @@ class Task(models.Model):
     dest_y = models.FloatField()
     dest_z = models.FloatField()
 
+    dest_cell_x = models.IntegerField(default=1)
+    dest_cell_y = models.IntegerField(default=1)
+    dest_cell_z = models.IntegerField(default=1)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

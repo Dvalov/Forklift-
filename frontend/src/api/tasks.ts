@@ -3,7 +3,7 @@ import { FORKLIFT_ID } from '@/config'
 import type { Task, CreateTaskPayload } from '@/types/api'
 
 export function getTasks(): Promise<{ data: Task[] | null; error: string | null }> {
-  return client<Task[]>(`/api/tasks/?forklift_id=${FORKLIFT_ID}`)
+  return client<Task[]>(`/api/tasks/?forklift=${FORKLIFT_ID}`)
 }
 
 export function createTask(
@@ -19,9 +19,7 @@ export function createTask(
 export function cancelTask(
   taskId: number,
 ): Promise<{ data: Task | null; error: string | null }> {
-  return client<Task>(`/api/tasks/${taskId}/`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'cancelled' }),
+  return client<Task>(`/api/tasks/${taskId}/cancel/`, {
+    method: 'POST',
   })
 }
