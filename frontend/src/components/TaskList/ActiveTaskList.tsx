@@ -52,6 +52,12 @@ export default function ActiveTaskList() {
   return (
     <section>
       <h2 className="text-xs font-normal text-gray-400 uppercase tracking-wide mb-2">Active</h2>
+      <div className="flex items-center w-full pb-1 border-b border-gray-800 mb-1 text-xs text-gray-500">
+        <span className="w-28 flex-shrink-0">Status</span>
+        <span className="flex-1">Cell</span>
+        <span className="w-20 flex-shrink-0 text-right">Date</span>
+        <span className="w-8 flex-shrink-0" />
+      </div>
       {content}
     </section>
   )
