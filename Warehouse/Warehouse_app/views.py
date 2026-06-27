@@ -33,7 +33,7 @@ class CellListView(APIView):
 
             # Формируем ответ в указанном формате
             result = [
-                {"x": float(cell.x), "y": float(cell.y), "z": float(cell.z)}
+                {"id": cell.id, "x": cell.x, "y": cell.y, "z": cell.z, "available": cell.available}
                 for cell in cells_queryset
             ]
 

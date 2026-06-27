@@ -23,3 +23,11 @@ export function cancelTask(
     method: 'POST',
   })
 }
+
+export function deleteTask(
+  taskId: number,
+): Promise<{ data: null; error: string | null }> {
+  return client<null>(`/api/tasks/${taskId}/`, {
+    method: 'DELETE',
+  })
+}

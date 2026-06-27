@@ -7,5 +7,5 @@ export function convertCellToCoords(
   y: number,
   z: number,
 ): Promise<{ data: Coordinates | null; error: string | null }> {
-  return client<Coordinates>(`/converter/${WAREHOUSE_ID}/?x=${x}&y=${y}&z=${z}`)
+  return client<Coordinates>(`/api/converter/${WAREHOUSE_ID}/cells/convert/?x=${x}&y=${y}&z=${z}`)
 }

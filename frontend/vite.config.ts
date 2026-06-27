@@ -11,16 +11,16 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/warehouse': {
+      '/api/warehouse': {
         target: 'http://localhost:8001',
         changeOrigin: true,
       },
-      '/converter': {
+      '/api/converter': {
         target: 'http://localhost:8002',
+        changeOrigin: true,
+      },
+      '/api': {
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
     },

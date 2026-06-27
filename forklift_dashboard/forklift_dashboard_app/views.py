@@ -68,7 +68,7 @@ class ForkliftViewSet(viewsets.ModelViewSet):
             return Response({"error": "Forklift not found"}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['post'], url_path='stop')
-    def emergency_stop(self, request, id=None):
+    def emergency_stop(self, request, pk=None):
         """Экстренная остановка"""
         try:
             forklift = self.get_object()
@@ -82,7 +82,7 @@ class ForkliftViewSet(viewsets.ModelViewSet):
             return Response({"error": "Forklift not found"}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['post'], url_path='task/(?P<task_id>[^/.]+)/execute')
-    def execute_task(self, request, id=None, task_id=None):
+    def execute_task(self, request, pk=None, task_id=None):
         """Выполнение задания"""
         try:
             forklift = self.get_object()
@@ -198,7 +198,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             return Response({"error": "Task not found"}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['post'], url_path='cancel')
-    def cancel_task(self, request, id=None):
+    def cancel_task(self, request, pk=None):
         """Отмена задания"""
         try:
             task = self.get_object()

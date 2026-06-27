@@ -3,5 +3,5 @@ import { WAREHOUSE_ID } from '@/config'
 import type { Cell } from '@/types/api'
 
 export function getAvailableCells(): Promise<{ data: Cell[] | null; error: string | null }> {
-  return client<Cell[]>(`/warehouse/${WAREHOUSE_ID}/cells/?available=true`)
+  return client<Cell[]>(`/api/warehouse/${WAREHOUSE_ID}/cells/?available=true`)
 }
