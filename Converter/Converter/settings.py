@@ -23,9 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 # Загружаем .env из той же папки
 load_dotenv(BASE_DIR / '.env')
-SECRET_KEY = os.getenv('SECRET_KEY')
-print(f"DEBUG: SECRET_KEY = {SECRET_KEY}")
+
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
+print(f"DEBUG: SECRET_KEY = {SECRET_KEY}")
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
