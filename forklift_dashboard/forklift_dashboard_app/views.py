@@ -197,6 +197,22 @@ class TaskViewSet(viewsets.ModelViewSet):
         except Exception:
             return Response({"error": "Task not found"}, status=status.HTTP_404_NOT_FOUND)
 
+    @action(detail=True, methods=['post'], url_path='restore')
+    def restore_task(self, request, pk=None):
+        """Восстановление отменённого задания"""
+        try:
+            task = self.get_object()
+            if task.restore():
+                return Response({
+                    'message': 'Task restored successfully',
+                    'id': task.id,
+                    'status': task.status,
+                })
+            return Response({"error": "Can only restore cancelled tasks"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response({"error": "Task not found"}, status=status.HTTP_404_NOT_FOUND)
+
     @action(detail=True, methods=['post'], url_path='cancel')
     def cancel_task(self, request, pk=None):
         """Отмена задания"""

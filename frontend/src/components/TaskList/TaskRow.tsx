@@ -1,8 +1,9 @@
 import type { Task } from '@/types/api'
-import { X } from 'lucide-react'
+import { X, RotateCcw } from 'lucide-react'
 import TaskStatusDot from './TaskStatusDot'
 import { useCancelTask } from './useCancelTask'
 import { useDeleteTask } from './useDeleteTask'
+import { useRestoreTask } from './useRestoreTask'
 
 interface TaskRowProps {
   task: Task
@@ -19,8 +20,9 @@ const STATUS_LABEL: Record<Task['status'], string> = {
 export default function TaskRow({ task }: TaskRowProps) {
   const cancelMutation = useCancelTask()
   const deleteMutation = useDeleteTask()
+  const restoreMutation = useRestoreTask()
 
-  const isPending = cancelMutation.isPending || deleteMutation.isPending
+  const isBusy = cancelMutation.isPending || deleteMutation.isPending || restoreMutation.isPending
 
   function handleX() {
     if (task.status === 'pending') cancelMutation.mutate(task.id)
@@ -28,8 +30,11 @@ export default function TaskRow({ task }: TaskRowProps) {
   }
 
   const showX = task.status === 'pending' || task.status === 'cancelled'
-  const isError = cancelMutation.isError || deleteMutation.isError
-  const errorText = task.status === 'pending' ? 'Cancel failed' : 'Delete failed'
+  const showRestore = task.status === 'cancelled'
+  const isError = cancelMutation.isError || deleteMutation.isError || restoreMutation.isError
+  const errorText =
+    restoreMutation.isError ? 'Restore failed' :
+    task.status === 'pending' ? 'Cancel failed' : 'Delete failed'
 
   const cellAddress = `${task.dest_cell_x} · ${task.dest_cell_y} · ${task.dest_cell_z}`
   const date = new Date(task.created_at).toLocaleDateString('ru-RU', {
@@ -47,15 +52,25 @@ export default function TaskRow({ task }: TaskRowProps) {
         </div>
         <span className="flex-1 text-sm font-semibold text-gray-100">{cellAddress}</span>
         <span className="w-20 flex-shrink-0 text-right text-xs text-gray-400">{date}</span>
-        <div className="w-8 flex-shrink-0 flex justify-end">
+        <div className="w-14 flex-shrink-0 flex items-center gap-1 justify-end">
+          {showRestore && (
+            <button
+              aria-label={`Restore task ${task.id}`}
+              disabled={isBusy}
+              onClick={() => restoreMutation.mutate(task.id)}
+              className="p-1 rounded text-gray-400 hover:text-gray-100 hover:bg-gray-700 disabled:opacity-40 transition-colors"
+            >
+              {restoreMutation.isPending ? '…' : <RotateCcw size={14} />}
+            </button>
+          )}
           {showX && (
             <button
               aria-label={task.status === 'pending' ? `Cancel task ${task.id}` : `Delete task ${task.id}`}
-              disabled={isPending}
+              disabled={isBusy}
               onClick={handleX}
               className="p-1 rounded text-danger hover:bg-danger/20 disabled:opacity-40 transition-colors"
             >
-              {isPending ? '…' : <X size={16} />}
+              {(cancelMutation.isPending || deleteMutation.isPending) ? '…' : <X size={16} />}
             </button>
           )}
         </div>

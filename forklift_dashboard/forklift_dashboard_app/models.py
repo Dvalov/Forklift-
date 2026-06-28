@@ -77,5 +77,11 @@ class Task(models.Model):
             self.save()
             return True
 
+    def restore(self):
+        if self.status == 'cancelled':
+            self.status = 'pending'
+            self.save()
+            return True
+
 
 # Create your models here.

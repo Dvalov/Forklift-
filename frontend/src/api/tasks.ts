@@ -24,6 +24,14 @@ export function cancelTask(
   })
 }
 
+export function restoreTask(
+  taskId: number,
+): Promise<{ data: Task | null; error: string | null }> {
+  return client<Task>(`/api/tasks/${taskId}/restore/`, {
+    method: 'POST',
+  })
+}
+
 export function deleteTask(
   taskId: number,
 ): Promise<{ data: null; error: string | null }> {

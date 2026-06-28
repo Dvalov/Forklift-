@@ -1,23 +1,44 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useAvailableCells } from './useAvailableCells'
 import { useCreateTask } from './useCreateTask'
+import { useTasksQuery } from '@/components/TaskList/useTasksQuery'
 import { convertCellToCoords } from '@/api/converter'
 import { FORKLIFT_ID } from '@/config'
 import type { Cell, Coordinates } from '@/types/api'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import CellMaskInput from './CellMaskInput'
+
+const DIGIT_SLOTS = 3
+
+function getSuggestions(digits: string, cells: Cell[]): Cell[] {
+  if (digits.length === 0) return []
+  return cells.filter(cell => {
+    if (digits[0] !== undefined && cell.x !== parseInt(digits[0], 10)) return false
+    if (digits[1] !== undefined && cell.y !== parseInt(digits[1], 10)) return false
+    if (digits[2] !== undefined && cell.z !== parseInt(digits[2], 10)) return false
+    return true
+  })
+}
 
 export default function TaskCreationForm() {
   const { data: cellsResult, isLoading: cellsLoading } = useAvailableCells()
+  const { data: tasks } = useTasksQuery()
   const createTaskMutation = useCreateTask()
   const cells: Cell[] = cellsResult?.data ?? []
 
+  const activeCellKeys = useMemo(() => {
+    const active = (tasks ?? []).filter(t => t.status === 'pending' || t.status === 'in_progress')
+    return new Set(active.map(t => `${t.dest_cell_x},${t.dest_cell_y},${t.dest_cell_z}`))
+  }, [tasks])
+
+  const availableCells = useMemo(
+    () => cells.filter(c => !activeCellKeys.has(`${c.x},${c.y},${c.z}`)),
+    [cells, activeCellKeys],
+  )
+
+  const [digits, setDigits] = useState('')
   const [selectedCell, setSelectedCell] = useState<Cell | null>(null)
+  const [cellError, setCellError] = useState<string | null>(null)
+  const [cellWarn, setCellWarn] = useState<string | null>(null)
   const [coords, setCoords] = useState<Coordinates | null>(null)
   const [converterLoading, setConverterLoading] = useState(false)
   const [converterError, setConverterError] = useState<string | null>(null)
@@ -35,30 +56,68 @@ export default function TaskCreationForm() {
     }
   }
 
-  function handleCellChange(value: string) {
-    const cell = cells.find(c => String(c.id) === value) ?? null
-    setSelectedCell(cell)
+  function handleDigitsChange(newDigits: string) {
+    setDigits(newDigits)
+    setSelectedCell(null)
     setCoords(null)
+    setCellError(null)
+    setCellWarn(null)
     setConverterError(null)
-    if (cell) {
-      runConverter(cell)
-    }
-  }
 
-  function handleRetry() {
-    if (selectedCell) {
-      runConverter(selectedCell)
+    if (newDigits.length < DIGIT_SLOTS) return
+
+    const [x, y, z] = [
+      parseInt(newDigits[0], 10),
+      parseInt(newDigits[1], 10),
+      parseInt(newDigits[2], 10),
+    ]
+    const cell = cells.find(c => c.x === x && c.y === y && c.z === z)
+
+    if (!cell) {
+      setCellError('Cell not found')
+      return
     }
+
+    const cellKey = `${x},${y},${z}`
+    if (activeCellKeys.has(cellKey)) {
+      const activeTask = (tasks ?? []).find(
+        t =>
+          (t.status === 'pending' || t.status === 'in_progress') &&
+          t.dest_cell_x === x && t.dest_cell_y === y && t.dest_cell_z === z,
+      )
+      const statusLabel = activeTask?.status === 'in_progress' ? 'in progress' : (activeTask?.status ?? 'active')
+      setCellWarn(`Cell is already in tasks with status: ${statusLabel}`)
+      return
+    }
+
+    if (!cell.available) {
+      setCellError('Cell not available')
+      return
+    }
+
+    setSelectedCell(cell)
+    runConverter(cell)
   }
 
   useEffect(() => {
     if (createTaskMutation.isSuccess) {
+      setDigits('')
       setSelectedCell(null)
       setCoords(null)
+      setCellError(null)
+      setCellWarn(null)
       setConverterError(null)
       createTaskMutation.reset()
     }
   }, [createTaskMutation.isSuccess, createTaskMutation])
+
+  function handleSelectSuggestion(cell: Cell) {
+    handleDigitsChange(`${cell.x}${cell.y}${cell.z}`)
+  }
+
+  function handleRetry() {
+    if (selectedCell) runConverter(selectedCell)
+  }
 
   function handleSubmit() {
     if (!selectedCell || !coords) return
@@ -84,28 +143,27 @@ export default function TaskCreationForm() {
       <p className="text-xs text-gray-400 mb-2 uppercase tracking-wide">New Task</p>
       <div className="flex items-center gap-3">
         <div className="flex-1">
-          <Select
-            value={selectedCell ? String(selectedCell.id) : ''}
-            onValueChange={handleCellChange}
-            disabled={cellsLoading}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder={cellsLoading ? 'Loading cells…' : 'Select cell'} />
-            </SelectTrigger>
-            <SelectContent>
-              {cells.map(cell => (
-                <SelectItem key={cell.id} value={String(cell.id)}>
-                  {cell.x}&middot;{cell.y}&middot;{cell.z}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {converterError !== null && (
+          <CellMaskInput
+            digits={digits}
+            onChange={handleDigitsChange}
+            suggestions={getSuggestions(digits, availableCells)}
+            onSelectSuggestion={handleSelectSuggestion}
+            disabled={cellsLoading || createTaskMutation.isPending}
+            hasError={!!cellError}
+          />
+          {cellWarn !== null && (
+            <p className="text-xs text-warning mt-1">{cellWarn}</p>
+          )}
+          {(cellError !== null || converterError !== null) && (
             <p className="text-xs text-danger mt-1">
-              Could not get coordinates —{' '}
-              <button onClick={handleRetry} className="underline">
-                Retry
-              </button>
+              {cellError ?? converterError}
+              {converterError !== null && (
+                <> —{' '}
+                  <button onClick={handleRetry} className="underline">
+                    Retry
+                  </button>
+                </>
+              )}
             </p>
           )}
         </div>
