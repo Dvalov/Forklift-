@@ -10,16 +10,19 @@ export default function ForkliftStatusPanel() {
 
   if (isLoading && !data) {
     return (
-      <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
-        Loading…
+      <div
+        className="flex items-center justify-center h-32 text-sm"
+        style={{ color: '#8ab4f8' }}
+      >
+        Загрузка…
       </div>
     )
   }
 
   if (isError && !data) {
     return (
-      <div className="text-danger text-sm px-6 py-4">
-        Unable to connect to forklift service
+      <div className="text-accent-err text-sm px-6 py-4">
+        Не удалось подключиться к сервису погрузчика
       </div>
     )
   }
@@ -27,26 +30,34 @@ export default function ForkliftStatusPanel() {
   if (!data) return null
 
   return (
-    <div className="space-y-4 px-6 py-4">
+    <div
+      className="rounded-2xl p-4 space-y-4"
+      style={{
+        background: 'rgba(0,0,0,0.4)',
+        backdropFilter: 'blur(5px)',
+        WebkitBackdropFilter: 'blur(5px)',
+        border: '1px solid rgba(0,255,255,0.1)',
+      }}
+    >
       <div className="flex items-center gap-3">
-        <h2 className="text-xl font-bold text-gray-100">{data.name}</h2>
+        <h2 className="text-base font-semibold" style={{ color: '#e0f0ff' }}>{data.name}</h2>
         <StatusBadge status={data.status} />
       </div>
 
       <StalenessIndicator lastSuccessAt={lastSuccessAt} />
 
       <div>
-        <p className="text-xs text-gray-400 mb-1">Battery</p>
+        <p className="mb-1" style={{ color: '#6a8aaa', fontSize: '12px' }}>Заряд батареи</p>
         <BatteryBar level={Math.round(data.charge_level)} />
       </div>
 
       <div>
-        <p className="text-xs text-gray-400 mb-2">Position</p>
+        <p className="mb-2" style={{ color: '#6a8aaa', fontSize: '12px' }}>Позиция</p>
         <PositionDisplay x={data.position_x} y={data.position_y} z={data.position_z} />
       </div>
 
       <div>
-        <p className="text-xs text-gray-400 mb-1">Uptime</p>
+        <p className="mb-1" style={{ color: '#6a8aaa', fontSize: '12px' }}>Время работы</p>
         <UptimeCounter status={data.status} />
       </div>
     </div>

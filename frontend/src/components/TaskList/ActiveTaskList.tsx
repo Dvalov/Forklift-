@@ -14,18 +14,22 @@ export default function ActiveTaskList() {
   if (isLoading && !data) {
     content = (
       <>
-        <div className="h-8 bg-gray-800 animate-pulse rounded mb-2" />
-        <div className="h-8 bg-gray-800 animate-pulse rounded mb-2" />
-        <div className="h-8 bg-gray-800 animate-pulse rounded mb-2" />
+        <div className="h-8 animate-pulse rounded mb-2" style={{ background: 'rgba(0,255,255,0.05)' }} />
+        <div className="h-8 animate-pulse rounded mb-2" style={{ background: 'rgba(0,255,255,0.05)' }} />
+        <div className="h-8 animate-pulse rounded mb-2" style={{ background: 'rgba(0,255,255,0.05)' }} />
       </>
     )
   } else if (isError && !data) {
-    content = <p className="text-danger text-sm">Could not load tasks — retrying</p>
+    content = (
+      <p className="text-sm" style={{ color: '#ff3366' }}>
+        Не удалось загрузить задачи. Проверьте соединение.
+      </p>
+    )
   } else if (isError && data) {
     content = (
       <>
-        <p className="text-warning text-xs mb-2">Task data may be outdated</p>
-        <ul role="list" className="divide-y divide-gray-800">
+        <p className="text-xs mb-2" style={{ color: '#ffaa00' }}>Данные могут быть устаревшими</p>
+        <ul role="list" className="divide-y divide-[rgba(0,255,255,0.05)]">
           {activeTasks.map(t => (
             <TaskRow key={t.id} task={t} />
           ))}
@@ -35,13 +39,13 @@ export default function ActiveTaskList() {
   } else if (data && activeTasks.length === 0) {
     content = (
       <div className="py-2">
-        <p className="text-sm text-gray-400">No active tasks</p>
-        <p className="text-xs text-gray-500">Tasks assigned to this forklift will appear here</p>
+        <p className="text-sm" style={{ color: '#8ab4f8' }}>Нет активных задач</p>
+        <p className="text-xs" style={{ color: '#6a8aaa' }}>Создайте задачу, выбрав ячейку склада выше</p>
       </div>
     )
   } else {
     content = (
-      <ul role="list" className="divide-y divide-gray-800">
+      <ul role="list" className="divide-y divide-[rgba(0,255,255,0.05)]">
         {activeTasks.map(t => (
           <TaskRow key={t.id} task={t} />
         ))}
@@ -50,15 +54,40 @@ export default function ActiveTaskList() {
   }
 
   return (
-    <section>
-      <h2 className="text-xs font-normal text-gray-400 uppercase tracking-wide mb-2">Active</h2>
-      <div className="flex items-center w-full pb-1 border-b border-gray-800 mb-1 text-xs text-gray-500">
-        <span className="w-28 flex-shrink-0">Status</span>
-        <span className="flex-1">Cell</span>
-        <span className="w-20 flex-shrink-0 text-right">Date</span>
-        <span className="w-14 flex-shrink-0" />
-      </div>
-      {content}
-    </section>
+    <div
+      className="rounded-2xl p-4"
+      style={{
+        background: 'rgba(0,0,0,0.4)',
+        backdropFilter: 'blur(5px)',
+        WebkitBackdropFilter: 'blur(5px)',
+        border: '1px solid rgba(0,255,255,0.1)',
+      }}
+    >
+      <section>
+        <h2
+          className="mb-3"
+          style={{
+            borderLeft: '3px solid #00ffff',
+            paddingLeft: '12px',
+            color: '#8ab4f8',
+            fontSize: '16px',
+            fontWeight: 600,
+            lineHeight: 1.2,
+          }}
+        >
+          Активные задачи
+        </h2>
+        <div
+          className="flex items-center w-full pb-1 mb-1 text-xs"
+          style={{ borderBottom: '1px solid rgba(0,255,255,0.1)', color: '#6a8aaa' }}
+        >
+          <span className="w-28 flex-shrink-0">Статус</span>
+          <span className="flex-1">Ячейка</span>
+          <span className="w-20 flex-shrink-0 text-right">Дата</span>
+          <span className="w-14 flex-shrink-0" />
+        </div>
+        {content}
+      </section>
+    </div>
   )
 }

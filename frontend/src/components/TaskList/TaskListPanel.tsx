@@ -17,7 +17,11 @@ class TaskListErrorBoundary extends React.Component<
 
   render() {
     if (this.state.hasError) {
-      return <p className="text-danger text-sm px-6 py-4">Task panel unavailable</p>
+      return (
+        <p className="text-sm p-4" style={{ color: '#ff3366' }}>
+          Панель задач недоступна
+        </p>
+      )
     }
     return this.props.children
   }
@@ -26,7 +30,7 @@ class TaskListErrorBoundary extends React.Component<
 export default function TaskListPanel() {
   return (
     <TaskListErrorBoundary>
-      <div className="flex flex-col gap-8 px-6 py-4">
+      <div className="flex flex-col gap-4">
         <ActiveTaskList />
         <TaskHistoryList />
       </div>

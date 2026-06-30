@@ -4,19 +4,20 @@ interface TaskStatusDotProps {
   status: Task['status']
 }
 
-const dotClass: Record<Task['status'], string> = {
-  pending: 'bg-warning',
-  in_progress: 'bg-accent',
-  completed: 'bg-success',
-  cancelled: 'bg-gray-600',
-  failed: 'bg-danger',
+const dotColorMap: Record<Task['status'], { backgroundColor: string }> = {
+  pending:     { backgroundColor: '#8ab4f8' },
+  in_progress: { backgroundColor: '#00ffff' },
+  completed:   { backgroundColor: '#6a8aaa' },
+  cancelled:   { backgroundColor: '#6a8aaa' },
+  failed:      { backgroundColor: '#ff3366' },
 }
 
 export default function TaskStatusDot({ status }: TaskStatusDotProps) {
   return (
     <span
       aria-hidden="true"
-      className={`flex-shrink-0 self-center w-2 h-2 rounded-full mr-2 ${dotClass[status]}`}
+      className="flex-shrink-0 self-center w-2 h-2 rounded-full mr-2"
+      style={dotColorMap[status]}
     />
   )
 }

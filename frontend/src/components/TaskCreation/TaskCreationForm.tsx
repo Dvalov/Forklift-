@@ -74,7 +74,7 @@ export default function TaskCreationForm() {
     const cell = cells.find(c => c.x === x && c.y === y && c.z === z)
 
     if (!cell) {
-      setCellError('Cell not found')
+      setCellError('Ячейка не найдена')
       return
     }
 
@@ -85,13 +85,13 @@ export default function TaskCreationForm() {
           (t.status === 'pending' || t.status === 'in_progress') &&
           t.dest_cell_x === x && t.dest_cell_y === y && t.dest_cell_z === z,
       )
-      const statusLabel = activeTask?.status === 'in_progress' ? 'in progress' : (activeTask?.status ?? 'active')
-      setCellWarn(`Cell is already in tasks with status: ${statusLabel}`)
+      const statusLabel = activeTask?.status === 'in_progress' ? 'в работе' : 'ожидает'
+      setCellWarn(`Ячейка уже занята задачей: ${statusLabel}`)
       return
     }
 
     if (!cell.available) {
-      setCellError('Cell not available')
+      setCellError('Ячейка недоступна')
       return
     }
 
@@ -136,11 +136,31 @@ export default function TaskCreationForm() {
     !selectedCell || !coords || converterLoading || createTaskMutation.isPending
 
   const submitLabel =
-    converterLoading || createTaskMutation.isPending ? '…' : 'Create Task'
+    converterLoading || createTaskMutation.isPending ? '…' : 'Создать задачу'
 
   return (
-    <section className="px-6 py-4 border-b border-gray-800">
-      <p className="text-xs text-gray-400 mb-2 uppercase tracking-wide">New Task</p>
+    <section
+      className="rounded-2xl p-4"
+      style={{
+        background: 'rgba(0,0,0,0.4)',
+        backdropFilter: 'blur(5px)',
+        WebkitBackdropFilter: 'blur(5px)',
+        border: '1px solid rgba(0,255,255,0.1)',
+      }}
+    >
+      <h2
+        className="mb-3"
+        style={{
+          borderLeft: '3px solid #00ffff',
+          paddingLeft: '12px',
+          color: '#8ab4f8',
+          fontSize: '16px',
+          fontWeight: 600,
+          lineHeight: 1.2,
+        }}
+      >
+        Новая задача
+      </h2>
       <div className="flex items-center gap-3">
         <div className="flex-1">
           <CellMaskInput
@@ -152,15 +172,15 @@ export default function TaskCreationForm() {
             hasError={!!cellError}
           />
           {cellWarn !== null && (
-            <p className="text-xs text-warning mt-1">{cellWarn}</p>
+            <p className="text-xs mt-1" style={{ color: '#ffaa00' }}>{cellWarn}</p>
           )}
           {(cellError !== null || converterError !== null) && (
-            <p className="text-xs text-danger mt-1">
+            <p className="text-xs mt-1" style={{ color: '#ff3366' }}>
               {cellError ?? converterError}
               {converterError !== null && (
                 <> —{' '}
-                  <button onClick={handleRetry} className="underline">
-                    Retry
+                  <button onClick={handleRetry} className="underline" style={{ color: '#ff3366' }}>
+                    Повторить
                   </button>
                 </>
               )}
@@ -176,7 +196,9 @@ export default function TaskCreationForm() {
         </button>
       </div>
       {createTaskMutation.isError && (
-        <p className="text-xs text-danger mt-2">Failed to create task — try again</p>
+        <p className="text-xs mt-2" style={{ color: '#ff3366' }}>
+          Не удалось создать задачу. Попробуйте снова.
+        </p>
       )}
     </section>
   )

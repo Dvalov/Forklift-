@@ -20,6 +20,8 @@ export default function UptimeCounter({ status }: { status: Forklift['status'] }
   }, [frozen])
 
   return (
-    <span className="font-mono text-gray-100 text-sm">{formatUptime(elapsed)}</span>
+    <span style={{ color: '#00ffff', fontFamily: "'Courier New', monospace", fontSize: '14px', fontWeight: 600 }}>
+      {formatUptime(elapsed)}
+    </span>
   )
 }

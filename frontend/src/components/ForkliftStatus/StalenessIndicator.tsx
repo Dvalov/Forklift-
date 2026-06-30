@@ -16,13 +16,15 @@ export default function StalenessIndicator({ lastSuccessAt }: { lastSuccessAt: n
 
   if (ageMs >= 30_000) {
     return (
-      <span className="text-danger text-xs animate-pulse">Connection lost</span>
+      <span className="text-xs animate-pulse" style={{ color: '#ff3366' }}>
+        Соединение потеряно
+      </span>
     )
   }
 
   return (
-    <span className="text-warning text-xs">
-      Last updated {Math.floor(ageMs / 1000)}s ago
+    <span className="text-xs" style={{ color: '#ffaa00' }}>
+      Обновлено {Math.floor(ageMs / 1000)}с назад
     </span>
   )
 }

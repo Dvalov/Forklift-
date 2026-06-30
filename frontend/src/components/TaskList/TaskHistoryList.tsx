@@ -14,26 +14,35 @@ export default function TaskHistoryList() {
   if (isLoading && !data) {
     content = (
       <>
-        <div className="h-8 bg-gray-800 animate-pulse rounded mb-2" />
-        <div className="h-8 bg-gray-800 animate-pulse rounded mb-2" />
-        <div className="h-8 bg-gray-800 animate-pulse rounded mb-2" />
+        <div className="h-8 animate-pulse rounded mb-2" style={{ background: 'rgba(0,255,255,0.05)' }} />
+        <div className="h-8 animate-pulse rounded mb-2" style={{ background: 'rgba(0,255,255,0.05)' }} />
+        <div className="h-8 animate-pulse rounded mb-2" style={{ background: 'rgba(0,255,255,0.05)' }} />
       </>
     )
   } else if (isError && !data) {
-    content = <p className="text-danger text-sm">Could not load history</p>
+    content = (
+      <p className="text-sm" style={{ color: '#ff3366' }}>
+        Не удалось загрузить историю. Проверьте соединение.
+      </p>
+    )
   } else if (isError && data) {
     content = (
-      <ul role="list" className="divide-y divide-gray-800">
+      <ul role="list" className="divide-y divide-[rgba(0,255,255,0.05)]">
         {historyTasks.map(t => (
           <TaskRow key={t.id} task={t} />
         ))}
       </ul>
     )
   } else if (data && historyTasks.length === 0) {
-    content = <p className="text-sm text-gray-400 py-2">No completed tasks yet</p>
+    content = (
+      <div className="py-2">
+        <p className="text-sm" style={{ color: '#8ab4f8' }}>История пуста</p>
+        <p className="text-xs" style={{ color: '#6a8aaa' }}>Завершённые задачи появятся здесь</p>
+      </div>
+    )
   } else {
     content = (
-      <ul role="list" className="divide-y divide-gray-800">
+      <ul role="list" className="divide-y divide-[rgba(0,255,255,0.05)]">
         {historyTasks.map(t => (
           <TaskRow key={t.id} task={t} />
         ))}
@@ -42,15 +51,40 @@ export default function TaskHistoryList() {
   }
 
   return (
-    <section>
-      <h2 className="text-xs font-normal text-gray-400 uppercase tracking-wide mb-2">History</h2>
-      <div className="flex items-center w-full pb-1 border-b border-gray-800 mb-1 text-xs text-gray-500">
-        <span className="w-28 flex-shrink-0">Status</span>
-        <span className="flex-1">Cell</span>
-        <span className="w-20 flex-shrink-0 text-right">Date</span>
-        <span className="w-14 flex-shrink-0" />
-      </div>
-      {content}
-    </section>
+    <div
+      className="rounded-2xl p-4"
+      style={{
+        background: 'rgba(0,0,0,0.4)',
+        backdropFilter: 'blur(5px)',
+        WebkitBackdropFilter: 'blur(5px)',
+        border: '1px solid rgba(0,255,255,0.1)',
+      }}
+    >
+      <section>
+        <h2
+          className="mb-3"
+          style={{
+            borderLeft: '3px solid #00ffff',
+            paddingLeft: '12px',
+            color: '#8ab4f8',
+            fontSize: '16px',
+            fontWeight: 600,
+            lineHeight: 1.2,
+          }}
+        >
+          История
+        </h2>
+        <div
+          className="flex items-center w-full pb-1 mb-1 text-xs"
+          style={{ borderBottom: '1px solid rgba(0,255,255,0.1)', color: '#6a8aaa' }}
+        >
+          <span className="w-28 flex-shrink-0">Статус</span>
+          <span className="flex-1">Ячейка</span>
+          <span className="w-20 flex-shrink-0 text-right">Дата</span>
+          <span className="w-14 flex-shrink-0" />
+        </div>
+        {content}
+      </section>
+    </div>
   )
 }

@@ -1,4 +1,5 @@
-import { KeyboardEvent, useRef, useLayoutEffect, useState } from 'react'
+import { useRef, useLayoutEffect, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { cn } from '@/lib/utils'
 import type { Cell } from '@/types/api'
 
@@ -72,19 +73,27 @@ export default function CellMaskInput({
         onFocus={() => { snapCursor(); setFocused(true) }}
         onBlur={() => setFocused(false)}
         disabled={disabled}
+        style={{ background: 'rgba(0,0,0,0.4)', color: '#e0f0ff' }}
         className={cn(
-          'flex h-9 w-full rounded-md border bg-panel px-3 py-2',
-          'text-sm font-mono tracking-widest text-gray-100',
+          'flex h-9 w-full rounded-md border px-3 py-2',
+          'text-sm font-mono tracking-widest',
           'focus:outline-none focus:ring-1',
           'disabled:cursor-not-allowed disabled:opacity-50',
           hasError
-            ? 'border-danger/70 focus:ring-danger/50'
-            : 'border-gray-700 focus:ring-accent',
+            ? 'border-[#ff3366] focus:ring-[rgba(255,51,102,0.5)]'
+            : 'border-[rgba(0,255,255,0.2)] focus:ring-[#00ffff]',
         )}
       />
 
       {showDropdown && (
-        <ul className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-md border border-gray-700 bg-panel shadow-md">
+        <ul
+          className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-md shadow-md"
+          style={{
+            background: 'rgba(0,0,0,0.4)',
+            backdropFilter: 'blur(5px)',
+            border: '1px solid rgba(0,255,255,0.1)',
+          }}
+        >
           {suggestions.map(cell => (
             <li key={cell.id}>
               <button
@@ -95,18 +104,19 @@ export default function CellMaskInput({
                   setFocused(false)
                 }}
                 disabled={!cell.available}
+                style={cell.available ? { color: '#e0f0ff' } : { color: '#6a8aaa' }}
                 className={cn(
                   'w-full px-3 py-2 text-left text-sm font-mono flex items-center justify-between',
                   cell.available
-                    ? 'text-gray-100 hover:bg-gray-800 cursor-pointer'
-                    : 'text-gray-500 cursor-default',
+                    ? 'hover:bg-[rgba(0,255,255,0.05)] cursor-pointer'
+                    : 'cursor-default',
                 )}
               >
                 <span className="tracking-widest">
                   {cell.x} · {cell.y} · {cell.z}
                 </span>
                 {!cell.available && (
-                  <span className="text-xs text-gray-600">unavailable</span>
+                  <span className="text-xs" style={{ color: '#6a8aaa' }}>недоступна</span>
                 )}
               </button>
             </li>
