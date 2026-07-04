@@ -2,6 +2,7 @@ import { useState } from 'react'
 import ForkliftStatusPanel from '@/components/ForkliftStatus/ForkliftStatusPanel'
 import TaskListPanel from '@/components/TaskList/TaskListPanel'
 import TaskCreationForm from '@/components/TaskCreation/TaskCreationForm'
+import InstrumentPanel from '@/components/Instruments/InstrumentPanel'
 
 function App() {
   const [activeTab, setActiveTab] = useState<'tasks' | 'instruments'>('tasks')
@@ -24,14 +25,7 @@ function App() {
 
         {/* Приборы tab */}
         <div className={activeTab === 'instruments' ? 'block' : 'hidden'}>
-          <div className="flex flex-col items-center justify-center h-full min-h-64 gap-2">
-            <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#8ab4f8' }}>
-              Панель приборов
-            </h2>
-            <p style={{ fontSize: '14px', color: '#6a8aaa' }}>
-              Будет доступна в следующей версии
-            </p>
-          </div>
+          <InstrumentPanel />
         </div>
       </div>
 
