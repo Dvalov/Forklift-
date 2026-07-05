@@ -2,6 +2,7 @@ interface SpeedometerGaugeProps {
   speed: number
   maxSpeed: number
   direction: 'forward' | 'backward' | 'stop'
+  speedAlert?: string | null
 }
 
 function speedToAngle(speed: number, maxSpeed: number): number {
@@ -21,79 +22,32 @@ function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: nu
   return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y}`
 }
 
-function zoneLabel(speed: number, maxSpeed: number): string {
-  const pct = speed / maxSpeed
-  if (pct < 0.4) return 'Малая скорость'
-  if (pct < 0.7) return 'Средняя скорость'
-  return 'Высокая скорость'
-}
-
-export default function SpeedometerGauge({ speed, maxSpeed, direction }: SpeedometerGaugeProps) {
+export default function SpeedometerGauge({ speed, maxSpeed, direction, speedAlert }: SpeedometerGaugeProps) {
   const directions = [
     { key: 'forward', label: '▶ Вперёд' },
     { key: 'stop', label: '■ Стоп' },
     { key: 'backward', label: '◀ Назад' },
   ]
 
+  const tickCount = 7
+  const ticks = Array.from({ length: tickCount }, (_, i) => (i * maxSpeed) / (tickCount - 1))
+
   return (
     <div
-      className="rounded-2xl p-4"
-      style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)', border: '1px solid rgba(0,255,255,0.1)' }}
+      className="rounded-2xl p-3 flex-1 min-h-0 flex flex-col"
+      style={{
+        background: 'rgba(0,0,0,0.4)',
+        backdropFilter: 'blur(5px)',
+        WebkitBackdropFilter: 'blur(5px)',
+        border: '1px solid rgba(0,255,255,0.1)',
+      }}
     >
-      <svg viewBox="0 0 200 200" style={{ width: '100%', height: 'auto', display: 'block' }}>
-        {/* Background arc track */}
-        <path
-          d={arcPath(100, 110, 70, -140, 140)}
-          stroke="rgba(0,255,255,0.2)"
-          strokeWidth="8"
-          fill="none"
-          strokeLinecap="round"
-        />
-
-        {/* Zone arcs */}
-        <path d={arcPath(100, 110, 58, -140, -28)} stroke="#3fb950" strokeWidth="3" fill="none" strokeLinecap="round" />
-        <path d={arcPath(100, 110, 58, -28, 56)} stroke="#ffaa00" strokeWidth="3" fill="none" strokeLinecap="round" />
-        <path d={arcPath(100, 110, 58, 56, 140)} stroke="#ff3366" strokeWidth="3" fill="none" strokeLinecap="round" />
-
-        {/* Needle */}
-        <line
-          x1="100" y1="110" x2="100" y2="45"
-          stroke="#00ffff"
-          strokeWidth="3"
-          strokeLinecap="round"
-          style={{
-            transform: `rotate(${speedToAngle(speed, maxSpeed)}deg)`,
-            transformOrigin: '100px 110px',
-          }}
-        />
-
-        {/* Pivot circle */}
-        <circle cx="100" cy="110" r="5" fill="#00ffff" />
-
-        {/* Digital speed */}
-        <text
-          x="100" y="158"
-          textAnchor="middle"
-          fill="#00ffff"
-          fontFamily="'Courier New', monospace"
-          fontSize="24"
-          fontWeight="600"
-        >
-          {speed.toFixed(1)}
-        </text>
-
-        {/* Unit label */}
-        <text x="100" y="176" textAnchor="middle" fill="#6a8aaa" fontSize="12">
-          м/с
-        </text>
-      </svg>
-
-      {/* Direction indicators */}
-      <div className="flex justify-center gap-2 mt-3">
+      {/* Direction buttons */}
+      <div className="flex justify-center gap-2 mb-1 flex-shrink-0">
         {directions.map(({ key, label }) => (
           <span
             key={key}
-            className="px-3 py-1 rounded text-sm"
+            className="px-2 py-0.5 rounded text-xs"
             style={
               direction === key
                 ? { background: 'rgba(0,255,255,0.15)', color: '#00ffff', border: '1px solid rgba(0,255,255,0.4)', fontWeight: 600 }
@@ -105,10 +59,71 @@ export default function SpeedometerGauge({ speed, maxSpeed, direction }: Speedom
         ))}
       </div>
 
-      {/* Zone label */}
-      <p className="text-center mt-2" style={{ color: '#6a8aaa', fontSize: '12px' }}>
-        {zoneLabel(speed, maxSpeed)}
-      </p>
+      {/* Speed alert */}
+      {speedAlert && (
+        <p className="text-center text-xs mb-1 flex-shrink-0" style={{ color: '#ff3366', fontWeight: 700 }}>
+          ⚠ {speedAlert.toUpperCase()}
+        </p>
+      )}
+
+      {/* SVG gauge — fills all remaining space */}
+      <div className="flex-1 min-h-0 relative">
+        <svg
+          viewBox="0 0 200 175"
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {/* Background arc */}
+          <path
+            d={arcPath(100, 100, 70, -140, 140)}
+            stroke="rgba(0,255,255,0.2)"
+            strokeWidth="8"
+            fill="none"
+            strokeLinecap="round"
+          />
+
+          {/* Zone arcs */}
+          <path d={arcPath(100, 100, 58, -140, -28)} stroke="#3fb950" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <path d={arcPath(100, 100, 58, -28, 56)} stroke="#ffaa00" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <path d={arcPath(100, 100, 58, 56, 140)} stroke="#ff3366" strokeWidth="3" fill="none" strokeLinecap="round" />
+
+          {/* Tick marks and labels */}
+          {ticks.map((tickSpeed, i) => {
+            const angle = speedToAngle(tickSpeed, maxSpeed)
+            const outer = polarToCartesian(100, 100, 76, angle)
+            const inner = polarToCartesian(100, 100, 69, angle)
+            const lbl = polarToCartesian(100, 100, 86, angle)
+            return (
+              <g key={i}>
+                <line x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} stroke="rgba(0,255,255,0.45)" strokeWidth="1.5" strokeLinecap="round" />
+                <text x={lbl.x} y={lbl.y} textAnchor="middle" dominantBaseline="middle" fill="#6a8aaa" fontSize="9">
+                  {tickSpeed % 1 === 0 ? tickSpeed.toFixed(0) : tickSpeed.toFixed(1)}
+                </text>
+              </g>
+            )
+          })}
+
+          {/* Needle */}
+          <line
+            x1="100" y1="100" x2="100" y2="38"
+            stroke="#00ffff"
+            strokeWidth="3"
+            strokeLinecap="round"
+            style={{ transform: `rotate(${speedToAngle(speed, maxSpeed)}deg)`, transformOrigin: '100px 100px' }}
+          />
+
+          {/* Pivot */}
+          <circle cx="100" cy="100" r="5" fill="#00ffff" />
+
+          {/* Speed value */}
+          <text x="100" y="128" textAnchor="middle" fill="#00ffff" fontFamily="'Courier New', monospace" fontSize="26" fontWeight="600">
+            {speed.toFixed(2)}
+          </text>
+          <text x="100" y="146" textAnchor="middle" fill="#6a8aaa" fontSize="11">
+            м/с
+          </text>
+        </svg>
+      </div>
     </div>
   )
 }

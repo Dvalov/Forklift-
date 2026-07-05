@@ -2,13 +2,27 @@ import { useState, useEffect } from 'react'
 
 interface TopStatusBarProps {
   mode: string
+  signal: { type: string; strength: number }
   connected: boolean
   taskNumber: string | null
-  errorText: string | null
+  errorCount: number
   cargoWeight: number
 }
 
-export default function TopStatusBar({ mode, connected, taskNumber, errorText, cargoWeight }: TopStatusBarProps) {
+const badgeBase: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '5px',
+  padding: '3px 10px',
+  borderRadius: '6px',
+  fontSize: '13px',
+  fontWeight: 500,
+  background: 'rgba(255,255,255,0.04)',
+  border: '1px solid rgba(0,255,255,0.18)',
+  whiteSpace: 'nowrap',
+}
+
+export default function TopStatusBar({ mode, signal, connected, taskNumber, errorCount, cargoWeight }: TopStatusBarProps) {
   const [clock, setClock] = useState(() => new Date().toLocaleTimeString('ru-RU'))
 
   useEffect(() => {
@@ -18,36 +32,50 @@ export default function TopStatusBar({ mode, connected, taskNumber, errorText, c
 
   return (
     <div
-      className="rounded-2xl p-4"
-      style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)', border: '1px solid rgba(0,255,255,0.1)' }}
+      className="rounded-2xl px-3 py-2"
+      style={{
+        background: 'rgba(0,0,0,0.4)',
+        backdropFilter: 'blur(5px)',
+        WebkitBackdropFilter: 'blur(5px)',
+        border: '1px solid rgba(0,255,255,0.1)',
+      }}
     >
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-1">
-          <span style={{ color: '#6a8aaa', fontSize: '12px' }}>Режим:</span>
-          <span style={{ color: '#e0f0ff', fontSize: '12px', fontWeight: 600 }}>{mode}</span>
-        </div>
+      <div className="flex flex-wrap gap-2 items-center">
+        <span style={badgeBase}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: connected ? '#3fb950' : '#ff3366', display: 'inline-block', flexShrink: 0 }} />
+          <span style={{ color: '#6a8aaa' }}>Режим</span>
+          <span style={{ color: '#e0f0ff', fontWeight: 700 }}>{mode.toUpperCase()}</span>
+        </span>
 
-        <div className="flex items-center gap-1">
-          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: connected ? '#00ffff' : '#ff3366' }} />
-          <span style={{ color: '#6a8aaa', fontSize: '12px' }}>Связь</span>
-        </div>
+        <span style={badgeBase}>
+          <span style={{ color: '#8ab4f8', fontSize: '13px' }}>📶</span>
+          <span style={{ color: '#6a8aaa' }}>Связь</span>
+          <span style={{ color: '#e0f0ff', fontWeight: 700 }}>{signal.type} ({signal.strength}%)</span>
+        </span>
 
-        <div className="flex items-center gap-1">
-          <span style={{ color: '#6a8aaa', fontSize: '12px' }}>Задание:</span>
-          <span style={{ color: '#e0f0ff', fontSize: '12px', fontWeight: 600 }}>{taskNumber ?? '—'}</span>
-        </div>
+        <span style={badgeBase}>
+          <span style={{ color: '#8ab4f8', fontSize: '13px' }}>📋</span>
+          <span style={{ color: '#6a8aaa' }}>Задание</span>
+          <span style={{ color: '#e0f0ff', fontWeight: 700 }}>{taskNumber ?? '—'}</span>
+        </span>
 
-        {errorText !== null && (
-          <span style={{ color: '#ff3366', fontSize: '12px' }}>{errorText}</span>
+        <span style={{ ...badgeBase, borderColor: 'rgba(0,255,255,0.35)' }}>
+          <span style={{ color: '#8ab4f8', fontSize: '13px' }}>⏱</span>
+          <span style={{ color: '#6a8aaa' }}>Время</span>
+          <span style={{ color: '#00ffff', fontFamily: "'Courier New', monospace", fontWeight: 700 }}>{clock}</span>
+        </span>
+
+        {errorCount > 0 && (
+          <span style={{ ...badgeBase, background: 'rgba(255,170,0,0.1)', borderColor: 'rgba(255,170,0,0.4)' }}>
+            <span style={{ fontSize: '13px' }}>⚠️</span>
+            <span style={{ color: '#ffaa00', fontWeight: 600 }}>Ошибок {errorCount} (сенсор)</span>
+          </span>
         )}
 
-        <div className="flex items-center gap-1">
-          <span style={{ color: '#6a8aaa', fontSize: '12px' }}>Груз:</span>
-          <span style={{ color: '#e0f0ff', fontSize: '12px', fontWeight: 600 }}>{cargoWeight} кг</span>
-        </div>
-
-        <span style={{ color: '#00ffff', fontFamily: "'Courier New', monospace", fontSize: '24px', fontWeight: 600 }}>
-          {clock}
+        <span style={badgeBase}>
+          <span style={{ fontSize: '13px' }}>📦</span>
+          <span style={{ color: '#6a8aaa' }}>Груз</span>
+          <span style={{ color: '#e0f0ff', fontWeight: 700 }}>{cargoWeight} кг</span>
         </span>
       </div>
     </div>

@@ -13,9 +13,9 @@ function App() {
       style={{ background: 'linear-gradient(135deg, #0a0e1a 0%, #141b2d 50%, #0d1525 100%)' }}
     >
       {/* Tab content area */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {/* Задачи tab */}
-        <div className={activeTab === 'tasks' ? 'block' : 'hidden'}>
+        <div className={`min-h-0 ${activeTab === 'tasks' ? 'flex-1 overflow-y-auto' : 'hidden'}`}>
           <div className="flex flex-col gap-4 p-4">
             <ForkliftStatusPanel />
             <TaskCreationForm />
@@ -24,7 +24,7 @@ function App() {
         </div>
 
         {/* Приборы tab */}
-        <div className={activeTab === 'instruments' ? 'block' : 'hidden'}>
+        <div className={`min-h-0 ${activeTab === 'instruments' ? 'flex-1 overflow-auto' : 'hidden'}`}>
           <InstrumentPanel />
         </div>
       </div>
