@@ -17,14 +17,13 @@ function App() {
         {/* Задачи tab */}
         <div className={`min-h-0 ${activeTab === 'tasks' ? 'flex-1 overflow-y-auto' : 'hidden'}`}>
           <div className="flex flex-col gap-4 p-4">
-            <ForkliftStatusPanel />
             <TaskCreationForm />
             <TaskListPanel />
           </div>
         </div>
 
         {/* Приборы tab */}
-        <div className={`min-h-0 ${activeTab === 'instruments' ? 'flex-1 overflow-auto' : 'hidden'}`}>
+        <div className={`min-h-0 ${activeTab === 'instruments' ? 'flex-1 overflow-hidden' : 'hidden'}`}>
           <InstrumentPanel />
         </div>
       </div>

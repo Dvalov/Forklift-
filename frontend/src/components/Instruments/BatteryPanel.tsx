@@ -1,5 +1,6 @@
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
+import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
 
 interface BatteryPanelProps {
   level: number
@@ -20,7 +21,10 @@ function labelColor(level: number): string {
   return '#ff3366'
 }
 
-export default function BatteryPanel({ level, voltage, current, remaining }: BatteryPanelProps) {
+export default function BatteryPanel({ level: fallbackLevel, voltage, current, remaining }: BatteryPanelProps) {
+  const { data } = useForkliftQuery()
+  const level = data != null ? Math.round(data.charge_level) : fallbackLevel
+
   return (
     <div
       className="rounded-2xl p-3 flex-shrink-0"

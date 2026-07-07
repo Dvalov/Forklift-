@@ -5,6 +5,8 @@ import SensorsPanel from './SensorsPanel'
 import BatteryPanel from './BatteryPanel'
 import SpeedometerGauge from './SpeedometerGauge'
 import WarehouseMap from './WarehouseMap'
+import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
+import StatusBadge from '@/components/ForkliftStatus/StatusBadge'
 
 const MOCK = {
   speed: 1.89,
@@ -25,7 +27,7 @@ const MOCK = {
     forkliftDirection: 45,
     gridCols: 10,
     gridRows: 9,
-    position: { x: 12.4, y: 8.7 },
+    position: { x: 12.4, z: 8.7 },
     targetLabel: 'стеллаж B-7',
     obstacle: 'человек (2.3 м)',
     angle: 45,
@@ -67,10 +69,12 @@ const MOCK = {
 }
 
 export default function InstrumentPanel() {
+  const { data: forklift } = useForkliftQuery()
+
   return (
     <div
-      className="flex flex-col gap-2 p-3"
-      style={{ minHeight: '100%', boxSizing: 'border-box' }}
+      className="flex flex-col gap-2 p-3 h-full"
+      style={{ boxSizing: 'border-box' }}
     >
       <TopStatusBar
         mode={MOCK.mode}
@@ -81,9 +85,23 @@ export default function InstrumentPanel() {
         cargoWeight={MOCK.cargoWeight}
       />
 
-      <div className="grid grid-cols-3 gap-2" style={{ minHeight: 0 }}>
-        {/* Left: Speedometer + Battery */}
-        <div className="flex flex-col gap-2" style={{ minHeight: '320px' }}>
+      <div className="grid grid-cols-3 gap-2 flex-1 min-h-0">
+        {/* Left: Name + Speedometer + Battery */}
+        <div className="flex flex-col gap-2 min-h-0">
+          {forklift && (
+            <div
+              className="rounded-2xl px-4 py-2 flex items-center gap-3 flex-shrink-0"
+              style={{
+                background: 'rgba(0,0,0,0.4)',
+                backdropFilter: 'blur(5px)',
+                WebkitBackdropFilter: 'blur(5px)',
+                border: '1px solid rgba(0,255,255,0.1)',
+              }}
+            >
+              <span style={{ color: '#e0f0ff', fontSize: '15px', fontWeight: 600 }}>{forklift.name}</span>
+              <StatusBadge status={forklift.status} />
+            </div>
+          )}
           <SpeedometerGauge
             speed={MOCK.speed}
             maxSpeed={MOCK.maxSpeed}

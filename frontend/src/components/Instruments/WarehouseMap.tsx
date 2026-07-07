@@ -1,10 +1,13 @@
+import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
+import { useTasksQuery } from '@/components/TaskList/useTasksQuery'
+
 interface WarehouseMapProps {
   forkliftCell: { x: number; y: number }
   targetCell: { x: number; y: number }
   forkliftDirection: number
   gridCols?: number
   gridRows?: number
-  position?: { x: number; y: number }
+  position?: { x: number; z: number }
   targetLabel?: string
   obstacle?: string | null
   angle?: number
@@ -17,16 +20,35 @@ function cellToPixel(cellX: number, cellY: number) {
 }
 
 export default function WarehouseMap({
-  forkliftCell,
-  targetCell,
+  forkliftCell: fallbackCell,
+  targetCell: fallbackTargetCell,
   forkliftDirection,
   gridCols = 10,
   gridRows = 8,
-  position,
-  targetLabel,
+  position: fallbackPosition,
+  targetLabel: fallbackTargetLabel,
   obstacle,
   angle,
 }: WarehouseMapProps) {
+  const { data } = useForkliftQuery()
+  const { data: tasks } = useTasksQuery()
+
+  const forkliftCell = data
+    ? { x: Math.round(data.position_x), y: Math.round(data.position_z) }
+    : fallbackCell
+
+  const position = data
+    ? { x: data.position_x, z: data.position_z }
+    : fallbackPosition
+
+  const activeTask = tasks?.find(t => t.status === 'in_progress') ?? null
+  const targetCell = activeTask
+    ? { x: activeTask.dest_cell_x, y: activeTask.dest_cell_z }
+    : fallbackTargetCell
+  const targetLabel = activeTask
+    ? `ячейка ${activeTask.dest_cell_x} · ${activeTask.dest_cell_y} · ${activeTask.dest_cell_z}`
+    : fallbackTargetLabel
+
   const svgWidth = gridCols * CELL_SIZE
   const svgHeight = gridRows * CELL_SIZE
   const fl = cellToPixel(forkliftCell.x, forkliftCell.y)
@@ -35,8 +57,9 @@ export default function WarehouseMap({
   return (
     <div
       className="rounded-2xl p-3 flex flex-col"
-      style={{ height: '100%', minHeight: '320px' }}
       style={{
+        height: '100%',
+        minHeight: '320px',
         background: 'rgba(0,0,0,0.4)',
         backdropFilter: 'blur(5px)',
         WebkitBackdropFilter: 'blur(5px)',
@@ -101,7 +124,7 @@ export default function WarehouseMap({
           <div>
             <p style={{ color: '#6a8aaa', fontSize: '10px', marginBottom: '2px' }}>Позиция</p>
             <p style={{ color: '#e0f0ff', fontSize: '11px', fontFamily: "'Courier New', monospace", fontWeight: 600 }}>
-              X:{position.x} Y:{position.y}
+              X:{position.x} Z:{position.z}
             </p>
           </div>
         )}
