@@ -5,7 +5,7 @@ from .models import Forklift, Task
 class ForkliftSerializer(serializers.ModelSerializer):
     class Meta:
         model = Forklift
-        fields = ['id', 'name', 'charge_level', 'status', 'position_x', 'position_y', 'position_z', 'updated_at']
+        fields = ['id', 'name', 'charge_level', 'status', 'position_x', 'position_y', 'position_z', 'speed', 'updated_at']
         read_only_fields = ['id', 'updated_at']
 
 
@@ -27,8 +27,8 @@ class TaskSerializer(serializers.ModelSerializer):
         model = Task
         fields = ['id', 'forklift_id', 'status', 'origin_x', 'origin_y', 'origin_z',
                   'dest_x', 'dest_y', 'dest_z', 'dest_cell_x', 'dest_cell_y', 'dest_cell_z',
-                  'created_at', 'updated_at']
-        read_only_fields = ['id', 'forklift_id', 'created_at', 'updated_at']
+                  'path_waypoints', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'forklift_id', 'path_waypoints', 'created_at', 'updated_at']
 
 
 class TaskCreateSerializer(serializers.Serializer):
