@@ -26,6 +26,8 @@ load_dotenv(BASE_DIR / '.env')
 print("BASE_DIR:", BASE_DIR)
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 print(f"DEBUG: SECRET_KEY = {SECRET_KEY}")
+FORKLIFT_ID = int(os.getenv('FORKLIFT_ID', 1))
+WAREHOUSE_ID = int(os.getenv('WAREHOUSE_ID', 1))
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
@@ -84,6 +86,10 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
+        "OPTIONS": {
+            "timeout": 20,
+            "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
+        },
     }
 }
 
