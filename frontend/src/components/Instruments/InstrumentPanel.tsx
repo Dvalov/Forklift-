@@ -7,6 +7,11 @@ import SpeedometerGauge from './SpeedometerGauge'
 import WarehouseMap from './WarehouseMap'
 import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
 import StatusBadge from '@/components/ForkliftStatus/StatusBadge'
+import type { Forklift } from '@/types/api'
+
+function deriveDirection(status: Forklift['status'] | undefined): 'forward' | 'backward' | 'stop' {
+  return status === 'moving' ? 'forward' : 'stop'
+}
 
 const MOCK = {
   speed: 1.89,
@@ -103,12 +108,12 @@ export default function InstrumentPanel() {
             </div>
           )}
           <SpeedometerGauge
-            speed={MOCK.speed}
+            speed={forklift?.speed ?? 0}
             maxSpeed={MOCK.maxSpeed}
-            direction={MOCK.direction}
+            direction={deriveDirection(forklift?.status)}
             speedAlert={MOCK.speedAlert}
           />
-          <BatteryPanel {...MOCK.battery} />
+          <BatteryPanel {...MOCK.battery} level={forklift?.charge_level ?? 0} />
         </div>
 
         {/* Center: Map */}

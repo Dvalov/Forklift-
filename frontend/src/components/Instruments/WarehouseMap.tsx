@@ -54,6 +54,12 @@ export default function WarehouseMap({
   const fl = cellToPixel(forkliftCell.x, forkliftCell.y)
   const tgt = cellToPixel(targetCell.x, targetCell.y)
 
+  const waypointPoints = activeTask?.path_waypoints?.map(wp =>
+    cellToPixel(wp.x, wp.z)
+  ) ?? []
+
+  const waypointPointsStr = waypointPoints.map(p => `${p.px},${p.py}`).join(' ')
+
   return (
     <div
       className="rounded-2xl p-3 flex flex-col"
@@ -93,7 +99,17 @@ export default function WarehouseMap({
           ))}
 
           {/* Route */}
-          <line x1={fl.px} y1={fl.py} x2={tgt.px} y2={tgt.py} stroke="#3fb950" strokeWidth="1.5" strokeDasharray="4 2" />
+          {waypointPoints.length >= 2 ? (
+            <polyline
+              points={waypointPointsStr}
+              fill="none"
+              stroke="#3fb950"
+              strokeWidth="1.5"
+              strokeDasharray="4 2"
+            />
+          ) : (
+            <line x1={fl.px} y1={fl.py} x2={tgt.px} y2={tgt.py} stroke="#3fb950" strokeWidth="1.5" strokeDasharray="4 2" />
+          )}
 
           {/* Target */}
           <circle cx={tgt.px} cy={tgt.py} r="5" fill="none" stroke="#ffaa00" strokeWidth="1.5" />

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import ForkliftStatusPanel from '@/components/ForkliftStatus/ForkliftStatusPanel'
 import TaskListPanel from '@/components/TaskList/TaskListPanel'
 import TaskCreationForm from '@/components/TaskCreation/TaskCreationForm'
 import InstrumentPanel from '@/components/Instruments/InstrumentPanel'
