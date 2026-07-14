@@ -30,9 +30,13 @@ export default function ActiveTaskList() {
       <>
         <p className="text-xs mb-2" style={{ color: '#ffaa00' }}>Данные могут быть устаревшими</p>
         <ul role="list" className="divide-y divide-[rgba(0,255,255,0.05)]">
-          {activeTasks.map(t => (
-            <TaskRow key={t.id} task={t} />
-          ))}
+          {(() => {
+            let pendingCounter = 0
+            return activeTasks.map(t => {
+              const queuePosition = t.status === 'pending' ? ++pendingCounter : undefined
+              return <TaskRow key={t.id} task={t} queuePosition={queuePosition} />
+            })
+          })()}
         </ul>
       </>
     )
@@ -46,9 +50,13 @@ export default function ActiveTaskList() {
   } else {
     content = (
       <ul role="list" className="divide-y divide-[rgba(0,255,255,0.05)]">
-        {activeTasks.map(t => (
-          <TaskRow key={t.id} task={t} />
-        ))}
+        {(() => {
+          let pendingCounter = 0
+          return activeTasks.map(t => {
+            const queuePosition = t.status === 'pending' ? ++pendingCounter : undefined
+            return <TaskRow key={t.id} task={t} queuePosition={queuePosition} />
+          })
+        })()}
       </ul>
     )
   }
@@ -81,6 +89,7 @@ export default function ActiveTaskList() {
           className="flex items-center w-full pb-1 mb-1 text-xs"
           style={{ borderBottom: '1px solid rgba(0,255,255,0.1)', color: '#6a8aaa' }}
         >
+          <span className="w-8 flex-shrink-0 text-center">№</span>
           <span className="w-28 flex-shrink-0">Статус</span>
           <span className="flex-1">Ячейка</span>
           <span className="w-20 flex-shrink-0 text-right">Дата</span>
