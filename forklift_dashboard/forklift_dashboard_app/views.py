@@ -142,6 +142,15 @@ class TaskViewSet(viewsets.ModelViewSet):
             except Forklift.DoesNotExist:
                 return Response({"error": "Forklift not found"}, status=status.HTTP_400_BAD_REQUEST)
 
+        if forklift is None:
+            from django.conf import settings as _s
+            fallback_id = getattr(_s, 'FORKLIFT_ID', None)
+            if fallback_id:
+                try:
+                    forklift = Forklift.objects.get(pk=fallback_id)
+                except Forklift.DoesNotExist:
+                    pass  # leave forklift=None; task saved unassigned
+
         task = Task.objects.create(
             forklift=forklift,
             dest_x=data['dest_x'],
