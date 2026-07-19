@@ -18,6 +18,9 @@ class Forklift(models.Model):
     position_x = models.FloatField(default=0)
     position_y = models.FloatField(default=0)
     position_z = models.FloatField(default=0)
+    cell_x = models.IntegerField(default=0)
+    cell_y = models.IntegerField(default=1)
+    cell_z = models.IntegerField(default=0)
     speed = models.FloatField(default=1.0)  # tiles per second
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)

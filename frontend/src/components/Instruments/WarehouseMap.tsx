@@ -34,7 +34,7 @@ export default function WarehouseMap({
   const { data: tasks } = useTasksQuery()
 
   const forkliftCell = data
-    ? { x: Math.round(data.position_x), y: Math.round(data.position_z) }
+    ? { x: data.cell_x, y: data.cell_z }
     : fallbackCell
 
   const position = data
@@ -140,7 +140,7 @@ export default function WarehouseMap({
           <div>
             <p style={{ color: '#6a8aaa', fontSize: '10px', marginBottom: '2px' }}>Позиция</p>
             <p style={{ color: '#e0f0ff', fontSize: '11px', fontFamily: "'Courier New', monospace", fontWeight: 600 }}>
-              X:{position.x} Z:{position.z}
+              X:{Number(position.x).toFixed(2)} Z:{Number(position.z).toFixed(2)}
             </p>
           </div>
         )}

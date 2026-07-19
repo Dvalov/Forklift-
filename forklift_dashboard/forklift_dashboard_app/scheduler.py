@@ -1,6 +1,5 @@
 import atexit
 import logging
-import os
 
 import requests as http_requests
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -11,27 +10,6 @@ logger = logging.getLogger(__name__)
 DISCHARGE_RATE = 0.5  # charge_level units lost per tick of movement
 
 _scheduler = None
-
-
-def _find_stop_cell(dest_x: int, dest_z: int, obstacles: set, forklift_x: float, forklift_z: float) -> tuple:
-    """Find the best free cell adjacent to dest to stop the forklift.
-
-    Checks all 4 cardinal neighbors; picks the one not in obstacles that is
-    closest to the forklift's current position. Falls back to dest itself
-    (with dest removed from obstacles) if all neighbors are blocked.
-    """
-    candidates = []
-    for dx, dz in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-        neighbor = (dest_x + dx, dest_z + dz)
-        if neighbor not in obstacles:
-            dist = abs(neighbor[0] - forklift_x) + abs(neighbor[1] - forklift_z)
-            candidates.append((dist, neighbor))
-
-    if candidates:
-        candidates.sort(key=lambda t: t[0])
-        return candidates[0][1]
-
-    return (dest_x, dest_z)  # all neighbors blocked — fall back to cell itself
 
 
 def start_scheduler():
@@ -57,7 +35,6 @@ def start_scheduler():
 def simulation_tick():
     try:
         from .models import Forklift, Task
-        from .pathfinding import astar
 
         forklift_id = getattr(settings, 'FORKLIFT_ID', None)
         warehouse_id = getattr(settings, 'WAREHOUSE_ID', None)
@@ -74,62 +51,20 @@ def simulation_tick():
 
         in_progress = Task.objects.filter(forklift=forklift, status='in_progress').first()
 
-        # Recovery: in_progress task with empty waypoints — run A* now
-        if in_progress and not in_progress.path_waypoints:
-            obstacles = _fetch_obstacles(warehouse_id)
-            if obstacles is None:
-                logger.error("Could not fetch warehouse cells; skipping recovery for task %s", in_progress.pk)
-                return
-            start = (forklift.position_x, forklift.position_z)
-            goal = _find_stop_cell(
-                in_progress.dest_cell_x, in_progress.dest_cell_z,
-                obstacles, forklift.position_x, forklift.position_z,
-            )
-            path = astar(start, goal, obstacles)
-            if path is None:
-                logger.warning("No path for in_progress task %s; marking failed", in_progress.pk)
-                in_progress.status = 'failed'
-                in_progress.save()
-                forklift.status = 'idle'
-                forklift.speed = 0.0
-                forklift.save()
-                in_progress = None
-            elif path == []:
-                in_progress.status = 'completed'
-                in_progress.save()
-                forklift.status = 'idle'
-                forklift.speed = 0.0
-                forklift.save()
-                logger.info("Task %s recovered: already at destination", in_progress.pk)
-                in_progress = None
-            else:
-                in_progress.path_waypoints = path
-                in_progress.save()
-                forklift.status = 'moving'
-                forklift.speed = 1.0
-                forklift.save()
-                logger.info("Task %s recovered; A* found %d waypoints", in_progress.pk, len(path))
-
         if not in_progress:
-            pending = Task.objects.filter(forklift=forklift, status='pending').order_by('created_at').first()
+            pending = Task.objects.filter(forklift=forklift, status='pending').first()
             if pending:
-                obstacles = _fetch_obstacles(warehouse_id)
-                if obstacles is None:
-                    logger.error("Could not fetch warehouse cells; skipping task pickup for task %s", pending.pk)
-                    return
-
-                start = (forklift.position_x, forklift.position_z)
-                goal = _find_stop_cell(
-                    pending.dest_cell_x, pending.dest_cell_z,
-                    obstacles, forklift.position_x, forklift.position_z,
+                path = _fetch_path(
+                    forklift_id=forklift_id, warehouse_id=warehouse_id,
+                    from_x=forklift.cell_x, from_y=forklift.cell_y, from_z=forklift.cell_z,
+                    dest_x=pending.dest_cell_x, dest_y=pending.dest_cell_y, dest_z=pending.dest_cell_z,
                 )
-
-                path = astar(start, goal, obstacles)
-
                 if path is None:
-                    logger.warning(
-                        "No path from %s to %s for task %s; task remains pending",
-                        start, goal, pending.pk
+                    logger.error(
+                        "Could not fetch path for task %s (%s,%s,%s)->(%s,%s,%s)",
+                        pending.pk,
+                        forklift.cell_x, forklift.cell_y, forklift.cell_z,
+                        pending.dest_cell_x, pending.dest_cell_y, pending.dest_cell_z,
                     )
                     return
 
@@ -149,16 +84,23 @@ def simulation_tick():
                 forklift.status = 'moving'
                 forklift.speed = 1.0
                 forklift.save()
+                in_progress = pending
                 logger.info("Task %s picked up; path has %d waypoints", pending.pk, len(path))
-                return  # advance waypoints on the next tick so in_progress is always visible
 
         if in_progress and in_progress.path_waypoints:
             waypoints = list(in_progress.path_waypoints)
             next_wp = waypoints.pop(0)
 
-            forklift.position_x = float(next_wp['x'])
-            forklift.position_z = float(next_wp['z'])
+            forklift.cell_x = round(next_wp['x'])
+            forklift.cell_z = round(next_wp['z'])
             forklift.charge_level = max(0.0, forklift.charge_level - DISCHARGE_RATE)
+
+            real = _fetch_real_coords(warehouse_id, forklift.cell_x, forklift.cell_y, forklift.cell_z)
+            if real:
+                forklift.position_x = real['x']
+                forklift.position_y = real['y']
+                forklift.position_z = real['z']
+
             forklift.save()
 
             in_progress.path_waypoints = waypoints
@@ -168,8 +110,10 @@ def simulation_tick():
                 forklift.status = 'idle'
                 forklift.speed = 0.0
                 forklift.save()
-                logger.info("Task %s completed; forklift stopped at (%s, %s)",
-                            in_progress.pk, next_wp['x'], next_wp['z'])
+                logger.info(
+                    "Task %s completed; forklift now idle at cell (%s, %s)",
+                    in_progress.pk, forklift.cell_x, forklift.cell_z,
+                )
             else:
                 in_progress.save()
 
@@ -177,16 +121,33 @@ def simulation_tick():
         logger.exception("Unhandled error in simulation_tick")
 
 
-def _fetch_obstacles(warehouse_id) -> set | None:
+def _fetch_real_coords(warehouse_id, cell_x, cell_y, cell_z):
+    """Call Converter convert_cell_address and return {"x", "y", "z"} in metres, or None on error."""
     try:
-        url = f"http://localhost:8001/api/warehouse/{warehouse_id}/cells/"
-        # trust_env=False bypasses Windows system proxy which returns 503 for localhost
-        session = http_requests.Session()
-        session.trust_env = False
-        resp = session.get(url, timeout=3)
+        url = f"http://localhost:8002/api/converter/{warehouse_id}/cells/convert/"
+        resp = http_requests.get(url, params={'x': cell_x, 'y': cell_y, 'z': cell_z},
+                                 timeout=3, proxies={'http': None, 'https': None})
         resp.raise_for_status()
-        cells = resp.json()
-        return {(int(c['x']), int(c['z'])) for c in cells}
+        data = resp.json()
+        return {'x': data['x'], 'y': data['y'], 'z': data['z']}
     except Exception:
-        logger.exception("Failed to fetch obstacles from Warehouse API at %s", url)
+        logger.warning("Could not convert cell (%s,%s,%s) to real coords", cell_x, cell_y, cell_z)
+        return None
+
+
+def _fetch_path(forklift_id, warehouse_id, from_x, from_y, from_z, dest_x, dest_y, dest_z):
+    """Call Converter get_cell_path and return list of {"x", "y", "z"} waypoints, or None on error."""
+    try:
+        url = f"http://localhost:8002/api/converter/{warehouse_id}/cells/get_path/"
+        resp = http_requests.get(url, params={
+            'forklift_id': forklift_id,
+            'warehouse_id': warehouse_id,
+            'from_x': from_x, 'from_y': from_y, 'from_z': from_z,
+            'dest_x': dest_x, 'dest_y': dest_y, 'dest_z': dest_z,
+        }, timeout=3, proxies={'http': None, 'https': None})
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get('path', [])
+    except Exception:
+        logger.exception("Failed to fetch path from Converter at %s", url)
         return None

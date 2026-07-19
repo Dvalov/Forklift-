@@ -15,7 +15,7 @@ export function useTasksQuery(): {
       if (error) throw new Error(error)
       return data as Task[]
     },
-    refetchInterval: 5000,
+    refetchInterval: 1500,
     refetchIntervalInBackground: true,
   })
 
