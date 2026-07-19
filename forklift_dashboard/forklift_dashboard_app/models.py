@@ -18,6 +18,10 @@ class Forklift(models.Model):
     position_x = models.FloatField(default=0)
     position_y = models.FloatField(default=0)
     position_z = models.FloatField(default=0)
+    cell_x = models.IntegerField(default=0)
+    cell_y = models.IntegerField(default=1)
+    cell_z = models.IntegerField(default=0)
+    speed = models.FloatField(default=1.0)  # tiles per second
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -61,9 +65,13 @@ class Task(models.Model):
     dest_cell_x = models.IntegerField(default=1)
     dest_cell_y = models.IntegerField(default=1)
     dest_cell_z = models.IntegerField(default=1)
+    path_waypoints = models.JSONField(default=list)  # list of {"x": int, "z": int} dicts
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
 
     def __str__(self):
         return f"Task {self.id} - {self.status}"

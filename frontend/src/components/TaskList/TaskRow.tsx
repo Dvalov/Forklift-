@@ -7,6 +7,7 @@ import { useRestoreTask } from './useRestoreTask'
 
 interface TaskRowProps {
   task: Task
+  queuePosition?: number
 }
 
 const STATUS_LABEL: Record<Task['status'], string> = {
@@ -17,7 +18,7 @@ const STATUS_LABEL: Record<Task['status'], string> = {
   cancelled:   'Отменена',
 }
 
-export default function TaskRow({ task }: TaskRowProps) {
+export default function TaskRow({ task, queuePosition }: TaskRowProps) {
   const cancelMutation = useCancelTask()
   const deleteMutation = useDeleteTask()
   const restoreMutation = useRestoreTask()
@@ -44,11 +45,30 @@ export default function TaskRow({ task }: TaskRowProps) {
   })
 
   return (
-    <li style={task.status === 'in_progress' ? { borderLeft: '3px solid #00ffff', paddingLeft: '4px' } : {}}>
+    <li style={
+      task.status === 'in_progress'
+        ? { borderLeft: '3px solid #00ffff', paddingLeft: '4px' }
+        : queuePosition === 1
+          ? { borderLeft: '3px solid rgba(0,255,255,0.5)', paddingLeft: '4px' }
+          : {}
+    }>
       <div className="flex items-center w-full py-2">
+        <span
+          className="w-8 flex-shrink-0 text-center"
+          style={queuePosition !== undefined ? { color: '#00ffff', fontSize: '11px', fontWeight: 700 } : {}}
+        >
+          {queuePosition ?? ''}
+        </span>
         <div className="flex items-center w-28 flex-shrink-0">
           <TaskStatusDot status={task.status} />
           <span className="text-xs" style={{ color: '#8ab4f8' }}>{STATUS_LABEL[task.status]}</span>
+          {queuePosition === 1 && (
+            <span
+              style={{ color: 'rgba(0,255,255,0.7)', fontSize: '10px', marginLeft: '4px', letterSpacing: '0.5px' }}
+            >
+              СЛЕД.
+            </span>
+          )}
         </div>
         <span className="flex-1" style={{ color: '#e0f0ff', fontSize: '14px', fontWeight: 600 }}>
           {cellAddress}

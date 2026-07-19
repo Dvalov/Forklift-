@@ -6,6 +6,7 @@ export interface Forklift {
   position_x: number
   position_y: number
   position_z: number
+  speed: number // tiles per second; 0.0 when idle, 1.0 when moving
   updated_at: string
 }
 
@@ -22,6 +23,7 @@ export interface Task {
   dest_cell_x: number
   dest_cell_y: number
   dest_cell_z: number
+  path_waypoints: Array<{ x: number; z: number }> // A* route grid coords; {x: column, z: row}; empty [] when task is pending
   created_at: string
   updated_at: string
 }

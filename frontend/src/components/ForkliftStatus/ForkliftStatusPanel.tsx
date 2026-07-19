@@ -2,7 +2,6 @@ import { useForkliftQuery } from './useForkliftQuery'
 import StatusBadge from './StatusBadge'
 import BatteryBar from './BatteryBar'
 import PositionDisplay from './PositionDisplay'
-import UptimeCounter from './UptimeCounter'
 import StalenessIndicator from './StalenessIndicator'
 
 export default function ForkliftStatusPanel() {
@@ -56,10 +55,6 @@ export default function ForkliftStatusPanel() {
         <PositionDisplay x={data.position_x} y={data.position_y} z={data.position_z} />
       </div>
 
-      <div>
-        <p className="mb-1" style={{ color: '#6a8aaa', fontSize: '12px' }}>Время работы</p>
-        <UptimeCounter status={data.status} />
-      </div>
     </div>
   )
 }

@@ -1,4 +1,12 @@
 import { useState, useEffect } from 'react'
+import type { Forklift } from '@/types/api'
+
+function formatUptime(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':')
+}
 
 interface TopStatusBarProps {
   mode: string
@@ -7,6 +15,7 @@ interface TopStatusBarProps {
   taskNumber: string | null
   errorCount: number
   cargoWeight: number
+  forkliftStatus?: Forklift['status']
 }
 
 const badgeBase: React.CSSProperties = {
@@ -22,13 +31,16 @@ const badgeBase: React.CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
-export default function TopStatusBar({ mode, signal, connected, taskNumber, errorCount, cargoWeight }: TopStatusBarProps) {
-  const [clock, setClock] = useState(() => new Date().toLocaleTimeString('ru-RU'))
+export default function TopStatusBar({ mode, signal, connected, taskNumber, errorCount, cargoWeight, forkliftStatus }: TopStatusBarProps) {
+  const [elapsed, setElapsed] = useState(0)
+  const frozen = forkliftStatus === 'stopped' || forkliftStatus === 'error'
 
   useEffect(() => {
-    const id = setInterval(() => setClock(new Date().toLocaleTimeString('ru-RU')), 1000)
+    const id = setInterval(() => {
+      if (!frozen) setElapsed((prev) => prev + 1)
+    }, 1000)
     return () => clearInterval(id)
-  }, [])
+  }, [frozen])
 
   return (
     <div
@@ -61,8 +73,8 @@ export default function TopStatusBar({ mode, signal, connected, taskNumber, erro
 
         <span style={{ ...badgeBase, borderColor: 'rgba(0,255,255,0.35)' }}>
           <span style={{ color: '#8ab4f8', fontSize: '13px' }}>⏱</span>
-          <span style={{ color: '#6a8aaa' }}>Время</span>
-          <span style={{ color: '#00ffff', fontFamily: "'Courier New', monospace", fontWeight: 700 }}>{clock}</span>
+          <span style={{ color: '#6a8aaa' }}>Время работы</span>
+          <span style={{ color: '#00ffff', fontFamily: "'Courier New', monospace", fontWeight: 700 }}>{formatUptime(elapsed)}</span>
         </span>
 
         {errorCount > 0 && (
