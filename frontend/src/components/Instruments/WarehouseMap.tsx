@@ -1,5 +1,6 @@
 import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
 import { useTasksQuery } from '@/components/TaskList/useTasksQuery'
+import { useAllCellsQuery } from './useAllCellsQuery'
 
 interface WarehouseMapProps {
   forkliftCell: { x: number; y: number }
@@ -32,6 +33,7 @@ export default function WarehouseMap({
 }: WarehouseMapProps) {
   const { data } = useForkliftQuery()
   const { data: tasks } = useTasksQuery()
+  const allCells = useAllCellsQuery()
 
   const forkliftCell = data
     ? { x: data.cell_x, y: data.cell_z }
@@ -49,8 +51,24 @@ export default function WarehouseMap({
     ? `ячейка ${activeTask.dest_cell_x} · ${activeTask.dest_cell_y} · ${activeTask.dest_cell_z}`
     : fallbackTargetLabel
 
-  const svgWidth = gridCols * CELL_SIZE
-  const svgHeight = gridRows * CELL_SIZE
+  const derivedCols = allCells.length > 0
+    ? Math.max(...allCells.map(c => c.x)) + 1
+    : (gridCols ?? 10)
+  const derivedRows = allCells.length > 0
+    ? Math.max(...allCells.map(c => c.z)) + 1
+    : (gridRows ?? 8)
+
+  // Group cells by (x, z); a position is occupied if ANY y-level has available=false
+  const cellMap = new Map<string, boolean>()
+  for (const cell of allCells) {
+    const key = `${cell.x}:${cell.z}`
+    const existing = cellMap.get(key)
+    // available=true only if ALL y-levels are true; false overrides true
+    cellMap.set(key, existing === false ? false : cell.available)
+  }
+
+  const svgWidth = derivedCols * CELL_SIZE
+  const svgHeight = derivedRows * CELL_SIZE
   const fl = cellToPixel(forkliftCell.x, forkliftCell.y)
   const tgt = cellToPixel(targetCell.x, targetCell.y)
 
@@ -91,10 +109,49 @@ export default function WarehouseMap({
         >
           <rect x="0" y="0" width={svgWidth} height={svgHeight} fill="rgba(0,0,0,0.3)" />
 
-          {Array.from({ length: gridCols + 1 }, (_, i) => (
+          {/* Cell background layer */}
+          {(() => {
+            const rects: JSX.Element[] = []
+            cellMap.forEach((available, key) => {
+              const [cx, cz] = key.split(':').map(Number)
+              const isForklift = cx === forkliftCell.x && cz === forkliftCell.y
+              const isTarget   = cx === targetCell.x   && cz === targetCell.y
+              let fill: string
+              let stroke: string = 'none'
+              let strokeWidth: string = '0'
+              if (isForklift) {
+                fill = 'rgba(0,255,255,0.12)'
+                stroke = '#00ffff'
+                strokeWidth = '1'
+              } else if (isTarget) {
+                fill = 'rgba(255,170,0,0.14)'
+                stroke = '#ffaa00'
+                strokeWidth = '1'
+              } else if (!available) {
+                fill = 'rgba(255,170,0,0.18)'
+              } else {
+                fill = 'rgba(0,255,255,0.04)'
+              }
+              rects.push(
+                <rect
+                  key={key}
+                  x={cx * CELL_SIZE}
+                  y={cz * CELL_SIZE}
+                  width={CELL_SIZE}
+                  height={CELL_SIZE}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                />
+              )
+            })
+            return rects
+          })()}
+
+          {Array.from({ length: derivedCols + 1 }, (_, i) => (
             <line key={`v${i}`} x1={i * CELL_SIZE} y1={0} x2={i * CELL_SIZE} y2={svgHeight} stroke="rgba(0,255,255,0.15)" strokeWidth="0.5" />
           ))}
-          {Array.from({ length: gridRows + 1 }, (_, i) => (
+          {Array.from({ length: derivedRows + 1 }, (_, i) => (
             <line key={`h${i}`} x1={0} y1={i * CELL_SIZE} x2={svgWidth} y2={i * CELL_SIZE} stroke="rgba(0,255,255,0.15)" strokeWidth="0.5" />
           ))}
 
