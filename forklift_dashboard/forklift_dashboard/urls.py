@@ -5,5 +5,3 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('forklift_dashboard_app.urls')),
 ]
-
-

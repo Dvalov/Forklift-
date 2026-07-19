@@ -2,7 +2,7 @@ import random
 from django.core.management.base import BaseCommand
 from forklift_dashboard_app.models import Forklift, Task
 
-FORKLIFT_NAME = "Forklift-01"
+FORKLIFT_NAME = "Forklift-1"
 
 SAMPLE_TASKS = [
     {
