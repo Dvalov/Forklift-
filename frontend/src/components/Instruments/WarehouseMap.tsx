@@ -1,3 +1,4 @@
+import { useRef, useState, useEffect } from 'react'
 import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
 import { useTasksQuery } from '@/components/TaskList/useTasksQuery'
 import { useAllCellsQuery } from './useAllCellsQuery'
@@ -19,6 +20,7 @@ const CELL_SIZE = 20
 function cellToPixel(cellX: number, cellY: number) {
   return { px: (cellX + 0.5) * CELL_SIZE, py: (cellY + 0.5) * CELL_SIZE }
 }
+
 
 export default function WarehouseMap({
   forkliftCell: fallbackCell,
@@ -72,11 +74,33 @@ export default function WarehouseMap({
   const fl = cellToPixel(forkliftCell.x, forkliftCell.y)
   const tgt = cellToPixel(targetCell.x, targetCell.y)
 
-  const waypointPoints = activeTask?.path_waypoints?.map(wp =>
-    cellToPixel(wp.x, wp.z)
-  ) ?? []
+  // Animated forklift position — follows waypoints between polled positions
+  const animFlRef = useRef({ px: fl.px, py: fl.py })
+  const [animFl, setAnimFl] = useState({ px: fl.px, py: fl.py })
+  const rafRef = useRef<number | null>(null)
 
-  const waypointPointsStr = waypointPoints.map(p => `${p.px},${p.py}`).join(' ')
+  useEffect(() => {
+    const from = animFlRef.current
+    const to = { px: fl.px, py: fl.py }
+    if (from.px === to.px && from.py === to.py) return
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+
+    const dx = to.px - from.px
+    const dy = to.py - from.py
+    const dur = (Math.hypot(dx, dy) / CELL_SIZE) * 1000
+    if (dur <= 0) { animFlRef.current = to; setAnimFl(to); return }
+    const t0 = performance.now()
+    const src = { ...from }
+    const tick = (now: number) => {
+      const t = Math.min((now - t0) / dur, 1)
+      const cur = { px: src.px + dx * t, py: src.py + dy * t }
+      animFlRef.current = cur
+      setAnimFl({ ...cur })
+      rafRef.current = t < 1 ? requestAnimationFrame(tick) : null
+    }
+    rafRef.current = requestAnimationFrame(tick)
+    return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current) }
+  }, [fl.px, fl.py]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
@@ -148,6 +172,33 @@ export default function WarehouseMap({
             return rects
           })()}
 
+          {/* Waypoint highlight layer — rounds float coords to cell grid, deduplicates */}
+          {(() => {
+            if (!activeTask?.path_waypoints?.length) return null
+            const seen = new Set<string>()
+            return activeTask.path_waypoints.map((wp) => {
+              const cx = Math.round(wp.x)
+              const cz = Math.round(wp.z)
+              const key = `${cx}:${cz}`
+              if (seen.has(key)) return null
+              seen.add(key)
+              if ((cx === forkliftCell.x && cz === forkliftCell.y) ||
+                  (cx === targetCell.x   && cz === targetCell.y)) return null
+              return (
+                <rect
+                  key={`wp-${key}`}
+                  x={cx * CELL_SIZE}
+                  y={cz * CELL_SIZE}
+                  width={CELL_SIZE}
+                  height={CELL_SIZE}
+                  fill="rgba(58,185,80,0.2)"
+                  stroke="#3fb950"
+                  strokeWidth="1"
+                />
+              )
+            })
+          })()}
+
           {Array.from({ length: derivedCols + 1 }, (_, i) => (
             <line key={`v${i}`} x1={i * CELL_SIZE} y1={0} x2={i * CELL_SIZE} y2={svgHeight} stroke="rgba(0,255,255,0.15)" strokeWidth="0.5" />
           ))}
@@ -155,18 +206,6 @@ export default function WarehouseMap({
             <line key={`h${i}`} x1={0} y1={i * CELL_SIZE} x2={svgWidth} y2={i * CELL_SIZE} stroke="rgba(0,255,255,0.15)" strokeWidth="0.5" />
           ))}
 
-          {/* Route */}
-          {waypointPoints.length >= 2 ? (
-            <polyline
-              points={waypointPointsStr}
-              fill="none"
-              stroke="#3fb950"
-              strokeWidth="1.5"
-              strokeDasharray="4 2"
-            />
-          ) : (
-            <line x1={fl.px} y1={fl.py} x2={tgt.px} y2={tgt.py} stroke="#3fb950" strokeWidth="1.5" strokeDasharray="4 2" />
-          )}
 
           {/* Target */}
           <circle cx={tgt.px} cy={tgt.py} r="5" fill="none" stroke="#ffaa00" strokeWidth="1.5" />
@@ -180,11 +219,13 @@ export default function WarehouseMap({
           )}
 
           {/* Forklift */}
-          <polygon
-            points={`${fl.px},${fl.py - 8} ${fl.px - 6},${fl.py + 5} ${fl.px + 6},${fl.py + 5}`}
-            fill="#00ffff"
-            transform={`rotate(${forkliftDirection}, ${fl.px}, ${fl.py})`}
-          />
+          <g transform={`translate(${animFl.px}, ${animFl.py})`}>
+            <polygon
+              points="0,-8 -6,5 6,5"
+              fill="#00ffff"
+              transform={`rotate(${forkliftDirection})`}
+            />
+          </g>
         </svg>
       </div>
 
