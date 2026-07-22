@@ -94,7 +94,7 @@ export default function WarehouseMap({
 
     const dx = to.px - from.px
     const dy = to.py - from.py
-    const dur = (Math.hypot(dx, dy) / CELL_SIZE) * 1000
+    const dur = (Math.hypot(dx, dy) / CELL_SIZE) * 750
     if (dur <= 0) { animFlRef.current = to; setAnimFl(to); setDepartingCell(null); return }
     const t0 = performance.now()
     const src = { ...from }
