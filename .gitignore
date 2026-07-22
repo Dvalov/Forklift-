@@ -311,6 +311,9 @@ dmypy.json
 
 .pytest_cache/
 
+# Django migrations
+**/migrations/
+
 # GSD planning
 .planning/
 /.planning/
