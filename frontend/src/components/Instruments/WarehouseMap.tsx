@@ -103,7 +103,7 @@ export default function WarehouseMap({
       const cur = { px: src.px + dx * t, py: src.py + dy * t }
       animFlRef.current = cur
       setAnimFl({ ...cur })
-      if (t >= 1) { setDepartingCell(null); rafRef.current = null }
+      if (t >= 1) { rafRef.current = null }
       else rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
