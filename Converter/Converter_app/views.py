@@ -170,6 +170,18 @@ def get_cell_path(request, warehouse_id):
         start = (from_x, from_z)
         dest  = (dest_x, dest_z)
 
+        # Если погрузчик стоит внутри шкафа (позиция в БД некорректна),
+        # используем ближайшую свободную соседнюю ячейку как эффективный старт.
+        if start in obstacles:
+            free_start_neighbors = [
+                (from_x + dx, from_z + dz)
+                for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                if (from_x + dx, from_z + dz) not in obstacles
+            ]
+            if not free_start_neighbors:
+                return JsonResponse({"path": [], "error": "no_path"}, status=200)
+            start = min(free_start_neighbors, key=lambda n: abs(n[0] - dest_x) + abs(n[1] - dest_z))
+
         # Если цель — шкаф, находим ближайшую свободную ячейку прохода рядом с ним.
         if dest in obstacles:
             free_neighbors = [
