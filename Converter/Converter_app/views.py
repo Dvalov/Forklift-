@@ -3,9 +3,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.core.cache import cache
 import json
-import math
+import requests as http_requests
 
 from .models import Size
+from .pathfinding import astar
 
 
 def get_warehouse_size(warehouse_id):
@@ -128,92 +129,50 @@ def convert_cell_address(request, warehouse_id):
 @require_http_methods(["GET", "POST"])
 def get_cell_path(request, warehouse_id):
     """
-    Возвращает путь для перемещения между ячейками
+    Возвращает A*-путь между двумя ячейками склада, обходя занятые ячейки.
 
     Параметры:
-        from_x, from_y, from_z - начальные координаты
-        dest_x, dest_y, dest_z - конечные координаты
+        from_x, from_z — начальная позиция (целые, принимает "3" и "3.0")
+        dest_x, dest_z — целевая позиция
+        from_y, dest_y, forklift_id — опциональные, не используются в A*
     """
     try:
-        # Получаем данные запроса
         if request.method == "GET":
             data = request.GET
         else:
             data = json.loads(request.body) if request.body else {}
 
-        # Проверяем обязательные параметры
-        required_params = ['from_x', 'from_y', 'from_z', 'dest_x', 'dest_y', 'dest_z']
-        missing_params = [p for p in required_params if p not in data]
-
-        if missing_params:
-            return JsonResponse({
-                'error': 'Missing required parameters',
-                'missing': missing_params
-            }, status=400)
-
-        # Конвертируем координаты
         try:
-            from_x = float(data['from_x'])
-            from_y = float(data['from_y'])
-            from_z = float(data['from_z'])
-            dest_x = float(data['dest_x'])
-            dest_y = float(data['dest_y'])
-            dest_z = float(data['dest_z'])
-        except (ValueError, TypeError):
+            from_x = int(float(data['from_x']))
+            from_z = int(float(data['from_z']))
+            dest_x = int(float(data['dest_x']))
+            dest_z = int(float(data['dest_z']))
+        except (KeyError, ValueError, TypeError) as e:
             return JsonResponse({
-                'error': 'All coordinates must be valid numbers'
+                'error': f'Invalid parameters: {e}'
             }, status=400)
 
-        # Получаем параметры пути
-        num_points = int(data.get('num_points', 20))
-        strategy = data.get('strategy', 'linear')
+        try:
+            resp = http_requests.get(
+                f"http://localhost:8001/api/warehouse/{warehouse_id}/cells/",
+                params={"available": "false"},
+                timeout=2,
+                proxies={"http": None, "https": None},
+            )
+            resp.raise_for_status()
+            occupied_cells = resp.json()
+            obstacles = {(c["x"], c["z"]) for c in occupied_cells}
+        except Exception:
+            return JsonResponse({"path": [], "error": "warehouse_unavailable"}, status=200)
 
-        # Вычисляем путь
-        if strategy == 'linear':
-            # Линейная интерполяция
-            path = []
-            for i in range(num_points + 1):
-                t = i / num_points
-                point = {
-                    'x': round(from_x + (dest_x - from_x) * t, 3),
-                    'y': round(from_y + (dest_y - from_y) * t, 3),
-                    'z': round(from_z + (dest_z - from_z) * t, 3)
-                }
-                path.append(point)
-        else:
-            # Стратегия по умолчанию - линейная
-            path = []
-            for i in range(num_points + 1):
-                t = i / num_points
-                point = {
-                    'x': round(from_x + (dest_x - from_x) * t, 3),
-                    'y': round(from_y + (dest_y - from_y) * t, 3),
-                    'z': round(from_z + (dest_z - from_z) * t, 3)
-                }
-                path.append(point)
+        result = astar((from_x, from_z), (dest_x, dest_z), obstacles)
 
-        # Вычисляем общую длину пути
-        distance = math.sqrt(
-            (dest_x - from_x) ** 2 +
-            (dest_y - from_y) ** 2 +
-            (dest_z - from_z) ** 2
-        )
+        if result == []:
+            return JsonResponse({"path": []}, status=200)
+        if result is None:
+            return JsonResponse({"path": [], "error": "no_path"}, status=200)
+        return JsonResponse({"path": result}, status=200)
 
-        response_data = {
-            'path': path,
-            'total_distance': round(distance, 3),
-            'start_point': {'x': from_x, 'y': from_y, 'z': from_z},
-            'end_point': {'x': dest_x, 'y': dest_y, 'z': dest_z},
-            'num_points': len(path),
-            'strategy_used': strategy
-        }
-
-        return JsonResponse(response_data, status=200)
-
-    except json.JSONDecodeError:
-        return JsonResponse({
-            'error': 'Invalid JSON body'
-        }, status=400)
     except Exception as e:
         return JsonResponse({
             'error': 'Internal server error',
