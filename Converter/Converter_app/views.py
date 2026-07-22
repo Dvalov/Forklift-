@@ -129,11 +129,15 @@ def convert_cell_address(request, warehouse_id):
 @require_http_methods(["GET", "POST"])
 def get_cell_path(request, warehouse_id):
     """
-    Возвращает A*-путь между двумя ячейками склада, обходя занятые ячейки.
+    Возвращает A*-путь до ближайшей свободной ячейки прохода рядом с целевым шкафом.
+
+    Все ячейки склада — это шкафы (препятствия). Проходы между ними не представлены
+    в API — они подразумеваются как отсутствующие ячейки. Погрузчик едет до ячейки
+    прохода, ближайшей к целевому шкафу, а не внутрь шкафа.
 
     Параметры:
-        from_x, from_z — начальная позиция (целые, принимает "3" и "3.0")
-        dest_x, dest_z — целевая позиция
+        from_x, from_z — начальная позиция погрузчика (в ячейках прохода)
+        dest_x, dest_z — адрес целевого шкафа
         from_y, dest_y, forklift_id — опциональные, не используются в A*
     """
     try:
@@ -148,24 +152,42 @@ def get_cell_path(request, warehouse_id):
             dest_x = int(float(data['dest_x']))
             dest_z = int(float(data['dest_z']))
         except (KeyError, ValueError, TypeError) as e:
-            return JsonResponse({
-                'error': f'Invalid parameters: {e}'
-            }, status=400)
+            return JsonResponse({'error': f'Invalid parameters: {e}'}, status=400)
 
+        # Все ячейки склада — шкафы, т.е. препятствия для погрузчика.
+        # Запрашиваем без фильтра available: занятость полки не влияет на проходимость.
         try:
             resp = http_requests.get(
                 f"http://localhost:8001/api/warehouse/{warehouse_id}/cells/",
-                params={"available": "false"},
                 timeout=2,
                 proxies={"http": None, "https": None},
             )
             resp.raise_for_status()
-            occupied_cells = resp.json()
-            obstacles = {(c["x"], c["z"]) for c in occupied_cells}
+            obstacles = {(c["x"], c["z"]) for c in resp.json()}
         except Exception:
             return JsonResponse({"path": [], "error": "warehouse_unavailable"}, status=200)
 
-        result = astar((from_x, from_z), (dest_x, dest_z), obstacles)
+        start = (from_x, from_z)
+        dest  = (dest_x, dest_z)
+
+        # Если цель — шкаф, находим ближайшую свободную ячейку прохода рядом с ним.
+        if dest in obstacles:
+            free_neighbors = [
+                (dest_x + dx, dest_z + dz)
+                for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                if (dest_x + dx, dest_z + dz) not in obstacles
+            ]
+            if not free_neighbors:
+                return JsonResponse({"path": [], "error": "no_path"}, status=200)
+            # Выбираем ближайшую к погрузчику ячейку прохода (по Манхэттену)
+            approach = min(free_neighbors, key=lambda n: abs(n[0] - from_x) + abs(n[1] - from_z))
+        else:
+            approach = dest
+
+        if start == approach:
+            return JsonResponse({"path": []}, status=200)
+
+        result = astar(start, approach, obstacles)
 
         if result == []:
             return JsonResponse({"path": []}, status=200)

@@ -48,18 +48,26 @@ class ConverterAPITestCase(TestCase):
 
 
 class AStarPathTestCase(TestCase):
+    """
+    Все ячейки склада — шкафы (препятствия). Погрузчик едет до ближайшей
+    свободной ячейки прохода рядом с целевым шкафом.
+    """
     def setUp(self):
         self.client = Client()
         self.warehouse_id = 1
         self.path_url = reverse('converter_app:get_cell_path', args=[self.warehouse_id])
 
-    def _no_obstacles(self, mock_get):
-        mock_get.return_value.json.return_value = []
+    def _mock_shelves(self, mock_get, shelf_coords):
+        """shelf_coords: список (x, z) — позиции шкафов."""
+        mock_get.return_value.json.return_value = [
+            {"x": x, "y": 1, "z": z, "available": True} for x, z in shelf_coords
+        ]
         mock_get.return_value.raise_for_status = lambda: None
 
     @patch('Converter_app.views.http_requests.get')
     def test_simple_path(self, mock_get):
-        self._no_obstacles(mock_get)
+        # Шкаф на (3,1). Погрузчик с (1,1). Подъезжает к (2,1) — ячейка прохода слева от шкафа.
+        self._mock_shelves(mock_get, [(3, 1)])
         response = self.client.get(self.path_url, {
             'from_x': 1, 'from_y': 1, 'from_z': 1,
             'dest_x': 3, 'dest_y': 1, 'dest_z': 1,
@@ -68,33 +76,34 @@ class AStarPathTestCase(TestCase):
         data = response.json()
         self.assertIn('path', data)
         path = data['path']
-        self.assertEqual(len(path), 2)
+        self.assertEqual(len(path), 1)
         self.assertEqual(path[0], {'x': 2, 'z': 1})
-        self.assertEqual(path[1], {'x': 3, 'z': 1})
 
     @patch('Converter_app.views.http_requests.get')
     def test_integer_waypoints(self, mock_get):
-        self._no_obstacles(mock_get)
+        # Шкаф на (4,1). Все waypoints должны быть целыми.
+        self._mock_shelves(mock_get, [(4, 1)])
         response = self.client.get(self.path_url, {
             'from_x': 1, 'from_y': 1, 'from_z': 1,
             'dest_x': 4, 'dest_y': 1, 'dest_z': 1,
         })
         self.assertEqual(response.status_code, 200)
         path = response.json()['path']
+        self.assertTrue(len(path) > 0)
         for wp in path:
             self.assertIsInstance(wp['x'], int, f"x not int: {wp}")
             self.assertIsInstance(wp['z'], int, f"z not int: {wp}")
 
     @patch('Converter_app.views.http_requests.get')
     def test_no_diagonals(self, mock_get):
-        self._no_obstacles(mock_get)
+        # Шкаф на (3,3). Путь до ближайшего прохода должен содержать только ортогональные шаги.
+        self._mock_shelves(mock_get, [(3, 3)])
         response = self.client.get(self.path_url, {
             'from_x': 1, 'from_y': 1, 'from_z': 1,
             'dest_x': 3, 'dest_y': 1, 'dest_z': 3,
         })
         self.assertEqual(response.status_code, 200)
         path = response.json()['path']
-        # prepend start for pairwise check
         full = [{'x': 1, 'z': 1}] + path
         for a, b in zip(full, full[1:]):
             step = abs(a['x'] - b['x']) + abs(a['z'] - b['z'])
@@ -102,39 +111,38 @@ class AStarPathTestCase(TestCase):
 
     @patch('Converter_app.views.http_requests.get')
     def test_obstacle_avoidance(self, mock_get):
-        mock_get.return_value.json.return_value = [{"x": 2, "y": 1, "z": 1, "available": False}]
-        mock_get.return_value.raise_for_status = lambda: None
+        # Шкафы: (3,1) — цель, (2,1) — блокирует прямой проход слева.
+        # Погрузчик должен найти обход и не заезжать ни в один шкаф.
+        self._mock_shelves(mock_get, [(3, 1), (2, 1)])
         response = self.client.get(self.path_url, {
             'from_x': 1, 'from_y': 1, 'from_z': 1,
             'dest_x': 3, 'dest_y': 1, 'dest_z': 1,
         })
         self.assertEqual(response.status_code, 200)
         path = response.json()['path']
+        self.assertTrue(len(path) > 0, "path should exist (detour via z row)")
+        shelf_positions = {(3, 1), (2, 1)}
         for wp in path:
-            self.assertFalse(wp['x'] == 2 and wp['z'] == 1, f"obstacle in path: {wp}")
+            self.assertNotIn((wp['x'], wp['z']), shelf_positions, f"shelf in path: {wp}")
 
     @patch('Converter_app.views.http_requests.get')
-    def test_same_cell(self, mock_get):
-        self._no_obstacles(mock_get)
+    def test_already_at_approach(self, mock_get):
+        # Погрузчик уже стоит в ячейке прохода рядом со шкафом — путь пустой.
+        self._mock_shelves(mock_get, [(3, 1)])
         response = self.client.get(self.path_url, {
-            'from_x': 2, 'from_y': 1, 'from_z': 2,
-            'dest_x': 2, 'dest_y': 1, 'dest_z': 2,
+            'from_x': 2, 'from_y': 1, 'from_z': 1,
+            'dest_x': 3, 'dest_y': 1, 'dest_z': 1,
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"path": []})
 
     @patch('Converter_app.views.http_requests.get')
     def test_no_path(self, mock_get):
-        mock_get.return_value.json.return_value = [
-            {"x": 2, "y": 1, "z": 1, "available": False},
-            {"x": 0, "y": 1, "z": 1, "available": False},
-            {"x": 1, "y": 1, "z": 2, "available": False},
-            {"x": 1, "y": 1, "z": 0, "available": False},
-        ]
-        mock_get.return_value.raise_for_status = lambda: None
+        # Шкаф на (3,3), все 4 соседа тоже шкафы — нет прохода к нему.
+        self._mock_shelves(mock_get, [(3, 3), (4, 3), (2, 3), (3, 4), (3, 2)])
         response = self.client.get(self.path_url, {
             'from_x': 1, 'from_y': 1, 'from_z': 1,
-            'dest_x': 5, 'dest_y': 1, 'dest_z': 5,
+            'dest_x': 3, 'dest_y': 1, 'dest_z': 3,
         })
         self.assertEqual(response.status_code, 200)
         data = response.json()
