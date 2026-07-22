@@ -16,7 +16,7 @@ export function useForkliftQuery(): {
       if (error) throw new Error(error)
       return data as Forklift
     },
-    refetchInterval: 1000,
+    refetchInterval: 3000,
     refetchIntervalInBackground: true,
   })
 

@@ -81,7 +81,7 @@ export default function WarehouseMap({
   const [departingCell, setDepartingCell] = useState<{ x: number; y: number } | null>(null)
   const rafRef = useRef<number | null>(null)
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const from = animFlRef.current
     const to = { px: fl.px, py: fl.py }
     if (from.px === to.px && from.py === to.py) return
