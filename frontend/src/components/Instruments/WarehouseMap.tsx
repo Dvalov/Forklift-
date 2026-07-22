@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useLayoutEffect } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
 import { useTasksQuery } from '@/components/TaskList/useTasksQuery'
 import { useAllCellsQuery } from './useAllCellsQuery'
@@ -74,11 +74,9 @@ export default function WarehouseMap({
   const fl = cellToPixel(forkliftCell.x, forkliftCell.y)
   const tgt = cellToPixel(targetCell.x, targetCell.y)
 
-  // Animated forklift position — follows waypoints between polled positions
+  // Animated forklift position — smoothly interpolates between polled positions
   const animFlRef = useRef({ px: fl.px, py: fl.py })
   const [animFl, setAnimFl] = useState({ px: fl.px, py: fl.py })
-  // Cell the triangle is currently departing from — stays green until animation completes
-  const [departingCell, setDepartingCell] = useState<{ x: number; y: number } | null>(null)
   const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -87,15 +85,10 @@ export default function WarehouseMap({
     if (from.px === to.px && from.py === to.py) return
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
 
-    // Remember which cell the triangle is leaving so we can keep it green
-    const depX = Math.round(from.px / CELL_SIZE - 0.5)
-    const depY = Math.round(from.py / CELL_SIZE - 0.5)
-    setDepartingCell({ x: depX, y: depY })
-
     const dx = to.px - from.px
     const dy = to.py - from.py
     const dur = (Math.hypot(dx, dy) / CELL_SIZE) * 750
-    if (dur <= 0) { animFlRef.current = to; setAnimFl(to); setDepartingCell(null); return }
+    if (dur <= 0) { animFlRef.current = to; setAnimFl(to); return }
     const t0 = performance.now()
     const src = { ...from }
     const tick = (now: number) => {
@@ -103,7 +96,7 @@ export default function WarehouseMap({
       const cur = { px: src.px + dx * t, py: src.py + dy * t }
       animFlRef.current = cur
       setAnimFl({ ...cur })
-      if (t >= 1) { rafRef.current = null }
+      if (t >= 1) rafRef.current = null
       else rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
@@ -180,48 +173,29 @@ export default function WarehouseMap({
             return rects
           })()}
 
-          {/* Waypoint highlight layer — rounds float coords to cell grid, deduplicates.
-               departingCell stays green until triangle animation completes. */}
+          {/* Waypoint highlight layer: forkliftCell + path_waypoints */}
           {(() => {
             const seen = new Set<string>()
             const rects: JSX.Element[] = []
-            const isSpecial = (cx: number, cz: number) =>
-              (cx === forkliftCell.x && cz === forkliftCell.y) ||
-              (cx === targetCell.x   && cz === targetCell.y)
 
-            // Keep departing cell green while triangle is mid-animation
-            if (departingCell && !isSpecial(departingCell.x, departingCell.y)) {
-              const key = `${departingCell.x}:${departingCell.y}`
+            // Current forklift position
+            if (!(forkliftCell.x === targetCell.x && forkliftCell.y === targetCell.y)) {
+              const key = `${forkliftCell.x}:${forkliftCell.y}`
               seen.add(key)
               rects.push(
-                <rect key={`dep-${key}`}
-                  x={departingCell.x * CELL_SIZE} y={departingCell.y * CELL_SIZE}
+                <rect key={`fl-${key}`}
+                  x={forkliftCell.x * CELL_SIZE} y={forkliftCell.y * CELL_SIZE}
                   width={CELL_SIZE} height={CELL_SIZE}
                   fill="rgba(58,185,80,0.2)" stroke="#3fb950" strokeWidth="1" />
               )
             }
 
-            // Arriving cell (forkliftCell) is also green during animation —
-            // it's an aisle cell absent from allCells, so it gets no cyan highlight otherwise
-            if (departingCell && !(forkliftCell.x === targetCell.x && forkliftCell.y === targetCell.y)) {
-              const key = `${forkliftCell.x}:${forkliftCell.y}`
-              if (!seen.has(key)) {
-                seen.add(key)
-                rects.push(
-                  <rect key={`arr-${key}`}
-                    x={forkliftCell.x * CELL_SIZE} y={forkliftCell.y * CELL_SIZE}
-                    width={CELL_SIZE} height={CELL_SIZE}
-                    fill="rgba(58,185,80,0.2)" stroke="#3fb950" strokeWidth="1" />
-                )
-              }
-            }
-
-            // Remaining waypoints from DB
+            // Remaining path waypoints
             for (const wp of activeTask?.path_waypoints ?? []) {
               const cx = Math.round(wp.x)
               const cz = Math.round(wp.z)
               const key = `${cx}:${cz}`
-              if (seen.has(key) || isSpecial(cx, cz)) continue
+              if (seen.has(key) || (cx === targetCell.x && cz === targetCell.y)) continue
               seen.add(key)
               rects.push(
                 <rect key={`wp-${key}`}
