@@ -1,4 +1,7 @@
 # warehouse/views.py
+import os
+import requests as http_requests
+from django.db import transaction
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -158,3 +161,79 @@ class CellDetailView(APIView):
                 {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class SyncFromOneCView(APIView):
+    """POST /api/warehouse/<warehouse_id>/sync-from-1c/
+    Calls a 1C HTTP service, normalizes its JSON response through a configurable
+    field adapter, and performs an atomic upsert+delete of cells.
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request, warehouse_id):
+        # STEP 1 — look up warehouse
+        warehouse = get_object_or_404(Warehouse, id=warehouse_id)
+
+        # STEP 2 — read all env vars inline (NOT at module level)
+        onec_url      = os.getenv('ONEC_API_URL')
+        onec_user     = os.getenv('ONEC_API_USER', '')
+        onec_password = os.getenv('ONEC_API_PASSWORD', '')
+        field_x       = os.getenv('ONEC_FIELD_X', 'x')
+        field_y       = os.getenv('ONEC_FIELD_Y', 'y')
+        field_z       = os.getenv('ONEC_FIELD_Z', 'z')
+        field_avail   = os.getenv('ONEC_FIELD_AVAILABLE', 'available')
+        root_key      = os.getenv('ONEC_ROOT_KEY', '')
+
+        # STEP 3 — guard: ONEC_API_URL not configured
+        if not onec_url:
+            return Response({"error": "onec_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        # STEP 4 — call 1C with Basic Auth, timeout=10
+        try:
+            resp = http_requests.get(onec_url, auth=(onec_user, onec_password), timeout=10)
+            resp.raise_for_status()
+            raw = resp.json()
+        except Exception:
+            return Response({"error": "onec_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        # STEP 5 — normalize to flat list of items
+        if root_key:
+            items = raw.get(root_key, []) if isinstance(raw, dict) else []
+        elif isinstance(raw, dict):
+            items = raw.get('value', raw.get('data', []))
+        else:
+            items = raw  # flat array — Shape A
+
+        # STEP 6 — empty response guard
+        if not items:
+            return Response(
+                {"error": "empty_response", "message": "1C returned 0 cells — sync aborted to prevent accidental deletion of all cells"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # STEP 7 — atomic upsert + delete
+        try:
+            with transaction.atomic():
+                synced = 0
+                seen_ids = []
+                for item in items:
+                    cell, _ = Cell.objects.update_or_create(
+                        warehouse=warehouse,
+                        x=int(item[field_x]),
+                        y=int(item[field_y]),
+                        z=int(item[field_z]),
+                        defaults={'available': bool(item.get(field_avail, True))},
+                    )
+                    seen_ids.append(cell.pk)
+                    synced += 1
+                deleted_count, _ = (
+                    Cell.objects.filter(warehouse=warehouse)
+                    .exclude(pk__in=seen_ids)
+                    .delete()
+                )
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # STEP 8 — success response
+        return Response({"synced": synced, "deleted": deleted_count}, status=status.HTTP_200_OK)
