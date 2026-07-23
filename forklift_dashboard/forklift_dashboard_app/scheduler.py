@@ -94,6 +94,7 @@ def simulation_tick():
             forklift.cell_x = round(next_wp['x'])
             forklift.cell_y = round(next_wp.get('y', forklift.cell_y))
             forklift.cell_z = round(next_wp['z'])
+     
             forklift.charge_level = max(0.0, forklift.charge_level - DISCHARGE_RATE)
 
             real = _fetch_real_coords(warehouse_id, forklift.cell_x, forklift.cell_y, forklift.cell_z)

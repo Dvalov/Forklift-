@@ -53,6 +53,88 @@ export default function WarehouseMap({
     ? `ячейка ${activeTask.dest_cell_x} · ${activeTask.dest_cell_y} · ${activeTask.dest_cell_z}`
     : fallbackTargetLabel
 
+  // ── Dead reckoning ────────────────────────────────────────────────────────
+  // drQueue items: { x: cell_x, y: cell_z } — mirrors scheduler waypoints locally.
+  // drCellRef/drQueueRef are refs so the setInterval callback never has stale closures.
+  // drCell/drQueue are state so renders fire when the local timer advances.
+  const drCellRef  = useRef<{ x: number; y: number } | null>(null)
+  const drQueueRef = useRef<Array<{ x: number; y: number }>>([])
+  const drTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [drCell,  setDrCell]  = useState<{ x: number; y: number } | null>(null)
+  const [drQueue, setDrQueue] = useState<Array<{ x: number; y: number }>>([])
+
+  // Initialize (or reset) dead reckoning whenever the active task changes.
+  useEffect(() => {
+    if (drTimerRef.current !== null) {
+      clearInterval(drTimerRef.current)
+      drTimerRef.current = null
+    }
+
+    if (!activeTask) {
+      drCellRef.current = null
+      drQueueRef.current = []
+      setDrCell(null)
+      setDrQueue([])
+      return
+    }
+
+    const start = { x: forkliftCell.x, y: forkliftCell.y }
+    const queue = (activeTask.path_waypoints ?? []).map(wp => ({
+      x: Math.round(wp.x),
+      y: Math.round(wp.z),
+    }))
+    drCellRef.current = start
+    drQueueRef.current = queue
+    setDrCell(start)
+    setDrQueue(queue)
+
+    // Advance one cell every 1 000 ms — matches scheduler tick.
+    drTimerRef.current = setInterval(() => {
+      const q = drQueueRef.current
+      if (q.length === 0) {
+        clearInterval(drTimerRef.current!)
+        drTimerRef.current = null
+        return
+      }
+      const [next, ...rest] = q
+      drCellRef.current = next
+      drQueueRef.current = rest
+      setDrCell({ ...next })
+      setDrQueue([...rest])
+    }, 1000)
+
+    return () => {
+      if (drTimerRef.current !== null) {
+        clearInterval(drTimerRef.current)
+        drTimerRef.current = null
+      }
+    }
+  }, [activeTask?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Server reconciliation: if a poll shows the server is ahead of our local
+  // position, jump to the server position and reset the queue from server data.
+  useEffect(() => {
+    if (!activeTask || drCellRef.current === null) return
+    const sx = forkliftCell.x
+    const sy = forkliftCell.y
+    if (drCellRef.current.x === sx && drCellRef.current.y === sy) return
+
+    const corrected = { x: sx, y: sy }
+    const queue = (activeTask.path_waypoints ?? []).map(wp => ({
+      x: Math.round(wp.x),
+      y: Math.round(wp.z),
+    }))
+    drCellRef.current = corrected
+    drQueueRef.current = queue
+    setDrCell(corrected)
+    setDrQueue(queue)
+  }, [forkliftCell.x, forkliftCell.y]) // eslint-disable-line react-hooks/exhaustive-deps
+  // ── End dead reckoning ────────────────────────────────────────────────────
+
+  // Use local dead-reckoning position while a task is running;
+  // fall back to raw server cell when idle.
+  const effectiveCell = drCell ?? forkliftCell
+
   const derivedCols = allCells.length > 0
     ? Math.max(...allCells.map(c => c.x)) + 1
     : (gridCols ?? 10)
@@ -71,19 +153,32 @@ export default function WarehouseMap({
 
   const svgWidth = derivedCols * CELL_SIZE
   const svgHeight = derivedRows * CELL_SIZE
-  const fl = cellToPixel(forkliftCell.x, forkliftCell.y)
+  const fl = cellToPixel(effectiveCell.x, effectiveCell.y)
   const tgt = cellToPixel(targetCell.x, targetCell.y)
 
-  // Animated forklift position — smoothly interpolates between polled positions
+  // Animated forklift position — smoothly interpolates between positions
   const animFlRef = useRef({ px: fl.px, py: fl.py })
   const [animFl, setAnimFl] = useState({ px: fl.px, py: fl.py })
   const rafRef = useRef<number | null>(null)
+  // Track whether we have received real server data yet; if not, teleport on first arrival
+  const hasRealData = useRef(data !== undefined)
 
   useEffect(() => {
     const from = animFlRef.current
     const to = { px: fl.px, py: fl.py }
+
+    // First real data arrival — teleport immediately, skip animation
+    const firstData = !hasRealData.current && data !== undefined
+    if (data !== undefined) hasRealData.current = true
+
     if (from.px === to.px && from.py === to.py) return
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+
+    if (firstData) {
+      animFlRef.current = to
+      setAnimFl(to)
+      return
+    }
 
     const dx = to.px - from.px
     const dy = to.py - from.py
@@ -139,7 +234,7 @@ export default function WarehouseMap({
             const rects: JSX.Element[] = []
             cellMap.forEach((available, key) => {
               const [cx, cz] = key.split(':').map(Number)
-              const isForklift = cx === forkliftCell.x && cz === forkliftCell.y
+              const isForklift = cx === effectiveCell.x && cz === effectiveCell.y
               const isTarget   = cx === targetCell.x   && cz === targetCell.y
               let fill: string
               let stroke: string = 'none'
@@ -173,27 +268,29 @@ export default function WarehouseMap({
             return rects
           })()}
 
-          {/* Waypoint highlight layer: forkliftCell + path_waypoints */}
+          {/* Waypoint highlight layer: effectiveCell + local dead-reckoning queue */}
           {(() => {
             const seen = new Set<string>()
             const rects: JSX.Element[] = []
 
-            // Current forklift position
-            if (!(forkliftCell.x === targetCell.x && forkliftCell.y === targetCell.y)) {
-              const key = `${forkliftCell.x}:${forkliftCell.y}`
+            // Current (dead-reckoned) forklift position
+            if (!(effectiveCell.x === targetCell.x && effectiveCell.y === targetCell.y)) {
+              const key = `${effectiveCell.x}:${effectiveCell.y}`
               seen.add(key)
               rects.push(
                 <rect key={`fl-${key}`}
-                  x={forkliftCell.x * CELL_SIZE} y={forkliftCell.y * CELL_SIZE}
+                  x={effectiveCell.x * CELL_SIZE} y={effectiveCell.y * CELL_SIZE}
                   width={CELL_SIZE} height={CELL_SIZE}
                   fill="rgba(58,185,80,0.2)" stroke="#3fb950" strokeWidth="1" />
               )
             }
 
-            // Remaining path waypoints
-            for (const wp of activeTask?.path_waypoints ?? []) {
-              const cx = Math.round(wp.x)
-              const cz = Math.round(wp.z)
+            // Remaining path: use local drQueue when active, server waypoints otherwise
+            const remaining = drCell !== null
+              ? drQueue
+              : (activeTask?.path_waypoints ?? []).map(wp => ({ x: Math.round(wp.x), y: Math.round(wp.z) }))
+
+            for (const { x: cx, y: cz } of remaining) {
               const key = `${cx}:${cz}`
               if (seen.has(key) || (cx === targetCell.x && cz === targetCell.y)) continue
               seen.add(key)
