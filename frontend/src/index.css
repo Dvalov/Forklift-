@@ -23,3 +23,8 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+@keyframes marching-ants {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -24; }
+}

@@ -5,3 +5,7 @@ import type { Cell } from '@/types/api'
 export function getAvailableCells(): Promise<{ data: Cell[] | null; error: string | null }> {
   return client<Cell[]>(`/api/warehouse/${WAREHOUSE_ID}/cells/?available=true`)
 }
+
+export function getAllCells(): Promise<{ data: Cell[] | null; error: string | null }> {
+  return client<Cell[]>(`/api/warehouse/${WAREHOUSE_ID}/cells/`)
+}

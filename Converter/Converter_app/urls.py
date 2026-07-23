@@ -1,7 +1,7 @@
 from django.urls import path
 from . import views
 
-app_name = 'Converter_app'
+app_name = 'converter_app'
 
 urlpatterns = [
     # Основные endpoints

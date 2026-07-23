@@ -92,6 +92,7 @@ def simulation_tick():
             next_wp = waypoints.pop(0)
 
             forklift.cell_x = round(next_wp['x'])
+            forklift.cell_y = round(next_wp.get('y', forklift.cell_y))
             forklift.cell_z = round(next_wp['z'])
             forklift.charge_level = max(0.0, forklift.charge_level - DISCHARGE_RATE)
 
@@ -126,7 +127,7 @@ def _fetch_real_coords(warehouse_id, cell_x, cell_y, cell_z):
     try:
         url = f"http://localhost:8002/api/converter/{warehouse_id}/cells/convert/"
         resp = http_requests.get(url, params={'x': cell_x, 'y': cell_y, 'z': cell_z},
-                                 timeout=3, proxies={'http': None, 'https': None})
+                                 timeout=0.5, proxies={'http': None, 'https': None})
         resp.raise_for_status()
         data = resp.json()
         return {'x': data['x'], 'y': data['y'], 'z': data['z']}

@@ -3,9 +3,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.core.cache import cache
 import json
-import math
+import requests as http_requests
 
 from .models import Size
+from .pathfinding import astar
 
 
 def get_warehouse_size(warehouse_id):
@@ -128,92 +129,84 @@ def convert_cell_address(request, warehouse_id):
 @require_http_methods(["GET", "POST"])
 def get_cell_path(request, warehouse_id):
     """
-    Возвращает путь для перемещения между ячейками
+    Возвращает A*-путь до ближайшей свободной ячейки прохода рядом с целевым шкафом.
+
+    Все ячейки склада — это шкафы (препятствия). Проходы между ними не представлены
+    в API — они подразумеваются как отсутствующие ячейки. Погрузчик едет до ячейки
+    прохода, ближайшей к целевому шкафу, а не внутрь шкафа.
 
     Параметры:
-        from_x, from_y, from_z - начальные координаты
-        dest_x, dest_y, dest_z - конечные координаты
+        from_x, from_z — начальная позиция погрузчика (в ячейках прохода)
+        dest_x, dest_z — адрес целевого шкафа
+        from_y, dest_y, forklift_id — опциональные, не используются в A*
     """
     try:
-        # Получаем данные запроса
         if request.method == "GET":
             data = request.GET
         else:
             data = json.loads(request.body) if request.body else {}
 
-        # Проверяем обязательные параметры
-        required_params = ['from_x', 'from_y', 'from_z', 'dest_x', 'dest_y', 'dest_z']
-        missing_params = [p for p in required_params if p not in data]
-
-        if missing_params:
-            return JsonResponse({
-                'error': 'Missing required parameters',
-                'missing': missing_params
-            }, status=400)
-
-        # Конвертируем координаты
         try:
-            from_x = float(data['from_x'])
-            from_y = float(data['from_y'])
-            from_z = float(data['from_z'])
-            dest_x = float(data['dest_x'])
-            dest_y = float(data['dest_y'])
-            dest_z = float(data['dest_z'])
-        except (ValueError, TypeError):
-            return JsonResponse({
-                'error': 'All coordinates must be valid numbers'
-            }, status=400)
+            from_x = int(float(data['from_x']))
+            from_z = int(float(data['from_z']))
+            dest_x = int(float(data['dest_x']))
+            dest_z = int(float(data['dest_z']))
+        except (KeyError, ValueError, TypeError) as e:
+            return JsonResponse({'error': f'Invalid parameters: {e}'}, status=400)
 
-        # Получаем параметры пути
-        num_points = int(data.get('num_points', 20))
-        strategy = data.get('strategy', 'linear')
+        # Все ячейки склада — шкафы, т.е. препятствия для погрузчика.
+        # Запрашиваем без фильтра available: занятость полки не влияет на проходимость.
+        try:
+            resp = http_requests.get(
+                f"http://localhost:8001/api/warehouse/{warehouse_id}/cells/",
+                timeout=2,
+                proxies={"http": None, "https": None},
+            )
+            resp.raise_for_status()
+            obstacles = {(c["x"], c["z"]) for c in resp.json()}
+        except Exception:
+            return JsonResponse({"path": [], "error": "warehouse_unavailable"}, status=200)
 
-        # Вычисляем путь
-        if strategy == 'linear':
-            # Линейная интерполяция
-            path = []
-            for i in range(num_points + 1):
-                t = i / num_points
-                point = {
-                    'x': round(from_x + (dest_x - from_x) * t, 3),
-                    'y': round(from_y + (dest_y - from_y) * t, 3),
-                    'z': round(from_z + (dest_z - from_z) * t, 3)
-                }
-                path.append(point)
+        start = (from_x, from_z)
+        dest  = (dest_x, dest_z)
+
+        # Если погрузчик стоит внутри шкафа (позиция в БД некорректна),
+        # используем ближайшую свободную соседнюю ячейку как эффективный старт.
+        if start in obstacles:
+            free_start_neighbors = [
+                (from_x + dx, from_z + dz)
+                for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                if (from_x + dx, from_z + dz) not in obstacles
+            ]
+            if not free_start_neighbors:
+                return JsonResponse({"path": [], "error": "no_path"}, status=200)
+            start = min(free_start_neighbors, key=lambda n: abs(n[0] - dest_x) + abs(n[1] - dest_z))
+
+        # Если цель — шкаф, находим ближайшую свободную ячейку прохода рядом с ним.
+        if dest in obstacles:
+            free_neighbors = [
+                (dest_x + dx, dest_z + dz)
+                for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                if (dest_x + dx, dest_z + dz) not in obstacles
+            ]
+            if not free_neighbors:
+                return JsonResponse({"path": [], "error": "no_path"}, status=200)
+            # Выбираем ближайшую к погрузчику ячейку прохода (по Манхэттену)
+            approach = min(free_neighbors, key=lambda n: abs(n[0] - from_x) + abs(n[1] - from_z))
         else:
-            # Стратегия по умолчанию - линейная
-            path = []
-            for i in range(num_points + 1):
-                t = i / num_points
-                point = {
-                    'x': round(from_x + (dest_x - from_x) * t, 3),
-                    'y': round(from_y + (dest_y - from_y) * t, 3),
-                    'z': round(from_z + (dest_z - from_z) * t, 3)
-                }
-                path.append(point)
+            approach = dest
 
-        # Вычисляем общую длину пути
-        distance = math.sqrt(
-            (dest_x - from_x) ** 2 +
-            (dest_y - from_y) ** 2 +
-            (dest_z - from_z) ** 2
-        )
+        if start == approach:
+            return JsonResponse({"path": []}, status=200)
 
-        response_data = {
-            'path': path,
-            'total_distance': round(distance, 3),
-            'start_point': {'x': from_x, 'y': from_y, 'z': from_z},
-            'end_point': {'x': dest_x, 'y': dest_y, 'z': dest_z},
-            'num_points': len(path),
-            'strategy_used': strategy
-        }
+        result = astar(start, approach, obstacles)
 
-        return JsonResponse(response_data, status=200)
+        if result == []:
+            return JsonResponse({"path": []}, status=200)
+        if result is None:
+            return JsonResponse({"path": [], "error": "no_path"}, status=200)
+        return JsonResponse({"path": result}, status=200)
 
-    except json.JSONDecodeError:
-        return JsonResponse({
-            'error': 'Invalid JSON body'
-        }, status=400)
     except Exception as e:
         return JsonResponse({
             'error': 'Internal server error',
