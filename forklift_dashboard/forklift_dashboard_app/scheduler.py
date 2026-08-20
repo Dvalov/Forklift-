@@ -57,7 +57,7 @@ def simulation_tick():
                 path = _fetch_path(
                     forklift_id=forklift_id, warehouse_id=warehouse_id,
                     from_x=forklift.cell_x, from_y=forklift.cell_y, from_z=forklift.cell_z,
-                    dest_x=pending.dest_cell_x, dest_y=pending.dest_cell_y, dest_z=pending.dest_cell_z,
+                    dest_x=2 * pending.dest_cell_x - 1, dest_y=pending.dest_cell_y, dest_z=pending.dest_cell_z,
                 )
                 if path is None:
                     logger.error(

@@ -30,6 +30,16 @@ def astar(start: tuple, goal: tuple, obstacles: set) -> list | None:
         # Start position blocked — cannot move at all
         return None
 
+    # Grid bounds: warehouse coordinates are never negative.
+    # Border corridors are always passable:
+    #   z=0 — top aisle above all shelf rows
+    #   x=0 — left aisle before the first shelf column
+    all_x = [start[0], goal[0]] + [p[0] for p in obstacles]
+    all_z = [start[1], goal[1]] + [p[1] for p in obstacles]
+    max_x = max(all_x)
+    max_z = max(all_z)
+    obstacles = {p for p in obstacles if not (p[1] == 0 or p[0] == 0)}
+
     def heuristic(a, b):
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
@@ -52,6 +62,8 @@ def astar(start: tuple, goal: tuple, obstacles: set) -> list | None:
         for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             nx, nz = current[0] + dx, current[1] + dz
             neighbor = (nx, nz)
+            if not (0 <= nx <= max_x and 0 <= nz <= max_z):
+                continue
             if neighbor in visited:
                 continue
             if neighbor in obstacles:

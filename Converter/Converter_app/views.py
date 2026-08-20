@@ -163,7 +163,7 @@ def get_cell_path(request, warehouse_id):
                 proxies={"http": None, "https": None},
             )
             resp.raise_for_status()
-            obstacles = {(c["x"], c["z"]) for c in resp.json()}
+            obstacles = {(2 * c["x"] - 1, c["z"]) for c in resp.json()}
         except Exception:
             return JsonResponse({"path": [], "error": "warehouse_unavailable"}, status=200)
 

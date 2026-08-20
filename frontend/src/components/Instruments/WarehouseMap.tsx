@@ -17,8 +17,11 @@ interface WarehouseMapProps {
 
 const CELL_SIZE = 20
 
+// Map logical cell x to display x with aisles: cell 1→1, 2→3, 3→5, …
+const cellDispX = (x: number) => 2 * x - 1
+
 function cellToPixel(cellX: number, cellY: number) {
-  return { px: (cellX + 0.5) * CELL_SIZE, py: (cellY + 0.5) * CELL_SIZE }
+  return { px: (cellDispX(cellX) + 0.5) * CELL_SIZE, py: (cellY + 0.5) * CELL_SIZE }
 }
 
 
@@ -135,9 +138,12 @@ export default function WarehouseMap({
   // fall back to raw server cell when idle.
   const effectiveCell = drCell ?? forkliftCell
 
-  const derivedCols = allCells.length > 0
-    ? Math.max(...allCells.map(c => c.x)) + 1
+  const maxCellX = allCells.length > 0
+    ? Math.max(...allCells.map(c => c.x))
     : (gridCols ?? 10)
+  // Each shelf column takes display slot 2x-1; aisles occupy even slots.
+  // Total display columns = 2 * maxCellX (slots 0 … 2*maxCellX-1).
+  const derivedCols = 2 * maxCellX
   const derivedRows = allCells.length > 0
     ? Math.max(...allCells.map(c => c.z)) + 1
     : (gridRows ?? 8)
@@ -255,7 +261,7 @@ export default function WarehouseMap({
               rects.push(
                 <rect
                   key={key}
-                  x={cx * CELL_SIZE}
+                  x={cellDispX(cx) * CELL_SIZE}
                   y={cz * CELL_SIZE}
                   width={CELL_SIZE}
                   height={CELL_SIZE}
@@ -279,7 +285,7 @@ export default function WarehouseMap({
               seen.add(key)
               rects.push(
                 <rect key={`fl-${key}`}
-                  x={effectiveCell.x * CELL_SIZE} y={effectiveCell.y * CELL_SIZE}
+                  x={cellDispX(effectiveCell.x) * CELL_SIZE} y={effectiveCell.y * CELL_SIZE}
                   width={CELL_SIZE} height={CELL_SIZE}
                   fill="rgba(58,185,80,0.2)" stroke="#3fb950" strokeWidth="1" />
               )
@@ -296,7 +302,7 @@ export default function WarehouseMap({
               seen.add(key)
               rects.push(
                 <rect key={`wp-${key}`}
-                  x={cx * CELL_SIZE} y={cz * CELL_SIZE}
+                  x={cellDispX(cx) * CELL_SIZE} y={cz * CELL_SIZE}
                   width={CELL_SIZE} height={CELL_SIZE}
                   fill="rgba(58,185,80,0.2)" stroke="#3fb950" strokeWidth="1" />
               )
