@@ -4,6 +4,11 @@ from . import views
 app_name = 'converter_app'
 
 urlpatterns = [
+    # Universal conversion — no warehouse_id, zeros allowed
+    path('api/converter/convert/',
+         views.convert_coords,
+         name='convert_coords'),
+
     # Основные endpoints
     path('api/converter/<int:warehouse_id>/cells/convert/',
          views.convert_cell_address,

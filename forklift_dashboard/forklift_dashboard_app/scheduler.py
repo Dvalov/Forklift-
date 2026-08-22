@@ -88,6 +88,13 @@ def simulation_tick():
                 logger.info("Task %s picked up; path has %d waypoints", pending.pk, len(path))
 
         if in_progress and in_progress.path_waypoints:
+            from django.utils import timezone
+            from datetime import timedelta
+            if (in_progress.frontend_advanced_at and
+                    timezone.now() - in_progress.frontend_advanced_at < timedelta(seconds=2)):
+                logger.debug("Task %s: frontend driving, skipping backend tick", in_progress.pk)
+                return
+
             waypoints = list(in_progress.path_waypoints)
             next_wp = waypoints.pop(0)
 
@@ -124,11 +131,13 @@ def simulation_tick():
 
 
 def _fetch_real_coords(warehouse_id, cell_x, cell_y, cell_z):
-    """Call Converter convert_cell_address and return {"x", "y", "z"} in metres, or None on error."""
+    """Call Converter universal convert and return {"x", "y", "z"} in metres, or None on error."""
     try:
-        url = f"http://localhost:8002/api/converter/{warehouse_id}/cells/convert/"
-        resp = http_requests.get(url, params={'x': cell_x, 'y': cell_y, 'z': cell_z},
-                                 timeout=0.5, proxies={'http': None, 'https': None})
+        resp = http_requests.get(
+            "http://localhost:8002/api/converter/convert/",
+            params={'x': cell_x, 'y': cell_y, 'z': cell_z},
+            timeout=0.5, proxies={'http': None, 'https': None},
+        )
         resp.raise_for_status()
         data = resp.json()
         return {'x': data['x'], 'y': data['y'], 'z': data['z']}

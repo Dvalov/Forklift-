@@ -126,6 +126,25 @@ def convert_cell_address(request, warehouse_id):
 
 
 @csrf_exempt
+@require_http_methods(["GET"])
+def convert_coords(request):
+    """Universal cell→metres conversion. No warehouse_id required. Zeros allowed."""
+    try:
+        x = int(request.GET.get('x', 0))
+        y = int(request.GET.get('y', 0))
+        z = int(request.GET.get('z', 0))
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'x, y, z must be integers'}, status=400)
+
+    size_data = get_warehouse_size(1)  # defaults if no record
+    return JsonResponse({
+        'x': float(x * size_data['row_size']),
+        'y': float(y * size_data['shelf_size']),
+        'z': float(z * size_data['cell_size']),
+    })
+
+
+@csrf_exempt
 @require_http_methods(["GET", "POST"])
 def get_cell_path(request, warehouse_id):
     """

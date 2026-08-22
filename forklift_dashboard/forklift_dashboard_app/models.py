@@ -66,6 +66,7 @@ class Task(models.Model):
     dest_cell_y = models.IntegerField(default=1)
     dest_cell_z = models.IntegerField(default=1)
     path_waypoints = models.JSONField(default=list)  # list of {"x": int, "z": int} dicts
+    frontend_advanced_at = models.DateTimeField(null=True, blank=True, default=None)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

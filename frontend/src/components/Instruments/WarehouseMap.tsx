@@ -1,7 +1,8 @@
-import { useRef, useState, useEffect, type ReactElement } from 'react'
+import { type ReactElement } from 'react'
 import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
 import { useTasksQuery } from '@/components/TaskList/useTasksQuery'
 import { useAllCellsQuery } from './useAllCellsQuery'
+import { useWaypointDriver } from './useWaypointDriver'
 
 interface WarehouseMapProps {
   forkliftCell: { x: number; y: number }
@@ -25,10 +26,6 @@ function cellToPixel(cellX: number, cellY: number) {
   return { px: (cellDispX(cellX) + 0.5) * CELL_SIZE, py: (cellY + 0.5) * CELL_SIZE }
 }
 
-// For display coords (forklift.cell_x, path_waypoints — A* grid space)
-function dispToPixel(dispX: number, dispZ: number) {
-  return { px: (dispX + 0.5) * CELL_SIZE, py: (dispZ + 0.5) * CELL_SIZE }
-}
 
 export default function WarehouseMap({
   forkliftCell: fallbackCell,
@@ -79,54 +76,9 @@ export default function WarehouseMap({
 
   const svgWidth  = derivedCols * CELL_SIZE
   const svgHeight = derivedRows * CELL_SIZE
-  const fl  = dispToPixel(forkliftCell.x, forkliftCell.y)
   const tgt = cellToPixel(targetCell.x, targetCell.y)
 
-  // Smooth rAF animation between server-reported positions
-  const animFlRef = useRef({ px: fl.px, py: fl.py })
-  const [animFl, setAnimFl] = useState({ px: fl.px, py: fl.py })
-  const rafRef = useRef<number | null>(null)
-  const hasRealData = useRef(data !== undefined)
-
-  useEffect(() => {
-    const from = animFlRef.current
-    const to = { px: fl.px, py: fl.py }
-
-    const firstData = !hasRealData.current && data !== undefined
-    if (data !== undefined) hasRealData.current = true
-
-    if (from.px === to.px && from.py === to.py) return
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-
-    if (firstData) {
-      animFlRef.current = to
-      setAnimFl(to)
-      return
-    }
-
-    const dx = to.px - from.px
-    const dy = to.py - from.py
-    const dur = (Math.hypot(dx, dy) / CELL_SIZE) * 750
-    if (dur <= 0) { animFlRef.current = to; setAnimFl(to); return }
-    const t0 = performance.now()
-    const src = { ...from }
-    const tick = (now: number) => {
-      const t = Math.min((now - t0) / dur, 1)
-      const cur = { px: src.px + dx * t, py: src.py + dy * t }
-      animFlRef.current = cur
-      setAnimFl({ ...cur })
-      if (t >= 1) rafRef.current = null
-      else rafRef.current = requestAnimationFrame(tick)
-    }
-    rafRef.current = requestAnimationFrame(tick)
-    return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current) }
-  }, [fl.px, fl.py]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Remaining waypoints straight from server (display coords)
-  const waypoints = (activeTask?.path_waypoints ?? []).map(wp => ({
-    x: Math.round(wp.x),
-    y: Math.round(wp.z),
-  }))
+  const { px: animPx, py: animPy, pendingWaypoints } = useWaypointDriver(activeTask, forkliftCell)
 
   return (
     <div
@@ -192,35 +144,16 @@ export default function WarehouseMap({
             return rects
           })()}
 
-          {/* Waypoint highlight layer — server path_waypoints (display coords) */}
-          {(() => {
-            const seen = new Set<string>()
-            const rects: ReactElement[] = []
-
-            // Forklift current position (server)
-            const flKey = `${forkliftCell.x}:${forkliftCell.y}`
-            seen.add(flKey)
-            rects.push(
-              <rect key={`fl-${flKey}`}
-                x={forkliftCell.x * CELL_SIZE} y={forkliftCell.y * CELL_SIZE}
+          {/* Waypoint highlight layer — local pending queue (always in sync with animation) */}
+          {pendingWaypoints
+            .filter(({ x, y }) => !(x === targetCell.x && y === targetCell.y))
+            .map(({ x, y }) => (
+              <rect key={`wp-${x}:${y}`}
+                x={x * CELL_SIZE} y={y * CELL_SIZE}
                 width={CELL_SIZE} height={CELL_SIZE}
                 fill="rgba(58,185,80,0.2)" stroke="#3fb950" strokeWidth="1" />
-            )
-
-            for (const { x: cx, y: cz } of waypoints) {
-              const key = `${cx}:${cz}`
-              if (seen.has(key) || (cx === targetCell.x && cz === targetCell.y)) continue
-              seen.add(key)
-              rects.push(
-                <rect key={`wp-${key}`}
-                  x={cx * CELL_SIZE} y={cz * CELL_SIZE}
-                  width={CELL_SIZE} height={CELL_SIZE}
-                  fill="rgba(58,185,80,0.2)" stroke="#3fb950" strokeWidth="1" />
-              )
-            }
-
-            return rects.length ? rects : null
-          })()}
+            ))
+          }
 
           {Array.from({ length: derivedCols + 1 }, (_, i) => (
             <line key={`v${i}`} x1={i * CELL_SIZE} y1={0} x2={i * CELL_SIZE} y2={svgHeight} stroke="rgba(0,255,255,0.15)" strokeWidth="0.5" />
@@ -239,7 +172,7 @@ export default function WarehouseMap({
           )}
 
           {/* Forklift */}
-          <g transform={`translate(${animFl.px}, ${animFl.py})`}>
+          <g transform={`translate(${animPx}, ${animPy})`}>
             <polygon
               points="0,-8 -6,5 6,5"
               fill="#00ffff"

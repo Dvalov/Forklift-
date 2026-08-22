@@ -32,6 +32,14 @@ export function restoreTask(
   })
 }
 
+export function advanceTask(
+  taskId: number,
+): Promise<{ data: Task | null; error: string | null }> {
+  return client<Task>(`/api/tasks/${taskId}/advance/`, {
+    method: 'POST',
+  })
+}
+
 export function deleteTask(
   taskId: number,
 ): Promise<{ data: null; error: string | null }> {
