@@ -328,3 +328,4 @@ forklift_dashboard/forklift_dashboard/settings.py
 /node_modules
 *.png
 forklift_dashboard/forklift_dashboard/settings.py
+CLAUDE.md
