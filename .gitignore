@@ -321,3 +321,10 @@ dmypy.json
 # Allow frontend/src/lib (not a Python lib dir)
 !frontend/src/lib/
 !frontend/src/lib/**
+log_8000.txt
+*.txt
+forklift_dashboard/forklift_dashboard/settings.py
+forklift_dashboard/forklift_dashboard/settings.py
+/node_modules
+*.png
+forklift_dashboard/forklift_dashboard/settings.py
