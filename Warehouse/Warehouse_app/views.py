@@ -1,5 +1,6 @@
 # warehouse/views.py
 import os
+import json
 import requests as http_requests
 from django.db import transaction
 from rest_framework.views import APIView
@@ -195,7 +196,11 @@ class SyncFromOneCView(APIView):
         try:
             resp = http_requests.get(onec_url, params=params, auth=(onec_user, onec_password), timeout=10)
             resp.raise_for_status()
-            raw = resp.json()
+            try:
+                raw = resp.json()
+            except ValueError:
+                # 1C sometimes adds UTF-8 BOM — strip it and retry
+                raw = json.loads(resp.content.decode('utf-8-sig'))
         except Exception:
             return Response({"error": "onec_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
