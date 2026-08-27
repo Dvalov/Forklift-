@@ -2,8 +2,11 @@ import React, { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import ActiveTaskList from './ActiveTaskList'
 import TaskHistoryList from './TaskHistoryList'
-import { syncFromOneC } from '@/api/warehouse'
-import { WAREHOUSE_ID } from '@/config'
+import { syncFromOneC, getAllCells } from '@/api/warehouse'
+import { updateForkliftCellPosition } from '@/api/forklift'
+import { WAREHOUSE_ID, FORKLIFT_ID } from '@/config'
+import { checkForkliftBoundary } from '@/lib/boundaryCheck'
+import type { Cell, Forklift } from '@/types/api'
 
 class TaskListErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -41,11 +44,29 @@ export default function TaskListPanel() {
       if (!result.data) throw new Error(result.error ?? 'sync failed')
       return result.data
     },
-    onSuccess: (data) => {
-      setSuccessMsg(
-        `Синхронизировано: ${data.synced} ячеек, удалено: ${data.deleted}`,
-      )
-      void queryClient.invalidateQueries({ queryKey: ['allCells', WAREHOUSE_ID] })
+    onSuccess: async (data) => {
+      setSuccessMsg(`Синхронизировано: ${data.synced} ячеек, удалено: ${data.deleted}`)
+
+      const freshCells = await queryClient.fetchQuery<Cell[]>({
+        queryKey: ['allCells', WAREHOUSE_ID],
+        queryFn: async () => {
+          const result = await getAllCells()
+          return result.data ?? []
+        },
+        staleTime: 0,
+      })
+
+      const forklift = queryClient.getQueryData<Forklift>(['forklift', FORKLIFT_ID])
+      if (!forklift || freshCells.length === 0) return
+
+      const correction = checkForkliftBoundary(forklift, freshCells)
+      if (!correction) return
+
+      const { error } = await updateForkliftCellPosition(FORKLIFT_ID, correction.cellX, correction.cellZ)
+      if (!error) {
+        void queryClient.invalidateQueries({ queryKey: ['forklift', FORKLIFT_ID] })
+        setSuccessMsg(prev => `${prev ?? ''} · Погрузчик скорректирован`)
+      }
     },
     onError: () => {
       setErrorMsg('Ошибка синхронизации')

@@ -26,7 +26,7 @@ load_dotenv(BASE_DIR / '.env')
 print("BASE_DIR:", BASE_DIR)
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 print(f"DEBUG: SECRET_KEY = {SECRET_KEY}")
-FORKLIFT_ID = int(os.getenv('FORKLIFT_ID', 1))
+FORKLIFT_ID = int(os.getenv('FORKLIFT_ID', 2))
 WAREHOUSE_ID = int(os.getenv('WAREHOUSE_ID', 1))
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
