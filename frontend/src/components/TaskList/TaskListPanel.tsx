@@ -36,16 +36,16 @@ export default function TaskListPanel() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const syncMutation = useMutation({
-    mutationFn: syncFromOneC,
-    onSuccess: (result) => {
-      if (result.data) {
-        setSuccessMsg(
-          `Синхронизировано: ${result.data.synced} ячеек, удалено: ${result.data.deleted}`,
-        )
-        void queryClient.invalidateQueries({ queryKey: ['allCells', WAREHOUSE_ID] })
-      } else {
-        setErrorMsg('Ошибка синхронизации')
-      }
+    mutationFn: async () => {
+      const result = await syncFromOneC()
+      if (!result.data) throw new Error(result.error ?? 'sync failed')
+      return result.data
+    },
+    onSuccess: (data) => {
+      setSuccessMsg(
+        `Синхронизировано: ${data.synced} ячеек, удалено: ${data.deleted}`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['allCells', WAREHOUSE_ID] })
     },
     onError: () => {
       setErrorMsg('Ошибка синхронизации')
