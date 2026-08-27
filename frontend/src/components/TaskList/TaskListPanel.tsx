@@ -132,7 +132,7 @@ export default function TaskListPanel() {
                   />
                 </svg>
               )}
-              Синхр. из 1С
+              Синхр. ячейки из 1С
             </button>
           </div>
           {successMsg && (
