@@ -176,9 +176,10 @@ class SyncFromOneCView(APIView):
         warehouse = get_object_or_404(Warehouse, id=warehouse_id)
 
         # STEP 2 — read all env vars inline (NOT at module level)
-        onec_url      = os.getenv('ONEC_API_URL')
-        onec_user     = os.getenv('ONEC_API_USER', '')
-        onec_password = os.getenv('ONEC_API_PASSWORD', '')
+        onec_url       = os.getenv('ONEC_API_URL')
+        onec_user      = os.getenv('ONEC_API_USER', '')
+        onec_password  = os.getenv('ONEC_API_PASSWORD', '')
+        onec_warehouse = os.getenv('ONEC_WAREHOUSE', '')
         field_x       = os.getenv('ONEC_FIELD_X', 'x')
         field_y       = os.getenv('ONEC_FIELD_Y', 'y')
         field_z       = os.getenv('ONEC_FIELD_Z', 'z')
@@ -190,8 +191,9 @@ class SyncFromOneCView(APIView):
             return Response({"error": "onec_unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         # STEP 4 — call 1C with Basic Auth, timeout=10
+        params = {'warehouse': onec_warehouse} if onec_warehouse else {}
         try:
-            resp = http_requests.get(onec_url, auth=(onec_user, onec_password), timeout=10)
+            resp = http_requests.get(onec_url, params=params, auth=(onec_user, onec_password), timeout=10)
             resp.raise_for_status()
             raw = resp.json()
         except Exception:
