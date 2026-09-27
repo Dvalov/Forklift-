@@ -195,12 +195,12 @@ export default function WarehouseMap({
             </p>
           </div>
         )}
-        {targetLabel && (
-          <div>
-            <p style={{ color: '#6a8aaa', fontSize: '10px', marginBottom: '2px' }}>Цель</p>
-            <p style={{ color: '#ffaa00', fontSize: '11px', fontWeight: 600 }}>{targetLabel}</p>
-          </div>
-        )}
+        <div>
+          <p style={{ color: '#6a8aaa', fontSize: '10px', marginBottom: '2px' }}>Цель</p>
+          <p style={{ color: targetLabel ? '#ffaa00' : '#6a8aaa', fontSize: '11px', fontWeight: 600 }}>
+            {targetLabel ?? '—'}
+          </p>
+        </div>
         {obstacle !== undefined && (
           <div>
             <p style={{ color: '#6a8aaa', fontSize: '10px', marginBottom: '2px' }}>Препятствие</p>

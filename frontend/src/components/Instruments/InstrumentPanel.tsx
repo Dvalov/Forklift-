@@ -33,7 +33,7 @@ const MOCK = {
     gridCols: 10,
     gridRows: 9,
     position: { x: 12.4, z: 8.7 },
-    targetLabel: 'стеллаж B-7',
+    targetLabel: undefined,
     obstacle: 'человек (2.3 м)',
     angle: 45,
   },
