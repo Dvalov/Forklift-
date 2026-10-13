@@ -2,8 +2,8 @@
 
 Промышленная веб-панель для операторов складских погрузчиков. Оператор видит состояние погрузчика в реальном времени и создаёт задачи выбором ячейки склада — всё в одном экране.
 
-![Экран приборов](screenshot_instruments.png)
-![Экран задач](screenshot_tasks.png)
+<img width="1919" height="958" alt="панель приборов" src="https://github.com/user-attachments/assets/3e6de0e2-13d8-474d-9340-6707d3b3e2dc" />
+<img width="1919" height="952" alt="панель задач" src="https://github.com/user-attachments/assets/ebaefe81-68ce-4235-8da2-771c48a09dd8" />
 
 ---
 
@@ -133,6 +133,12 @@ frontend/src/
 - Синхронизация ячеек склада из 1C
 - Вкладка «Приборы»: карта, спидометр, сенсоры, AI-рекомендации
 - Backend-эндпоинт `POST /api/warehouse/{id}/anylogic/task/` — отправляет задачу погрузчику в AnyLogic-модель
+
+https://github.com/user-attachments/assets/adeeb2da-ba28-4fa3-b8a3-af4b649d7304
+
+https://github.com/user-attachments/assets/2661d491-2efd-4fce-a3f6-37e51d3c8376
+
+
 
 ### В работе / не реализовано
 
