@@ -54,3 +54,35 @@ export interface CreateTaskPayload {
   dest_cell_y: number
   dest_cell_z: number
 }
+
+export interface AnyLogicCell {
+  id: number
+  row: number
+  col: number
+  occupied: boolean
+  centerX: number
+  centerY: number
+}
+
+export interface AnyLogicForklift {
+  id: number
+  x: number
+  y: number
+  charge: number
+  busy: boolean
+  state: string
+}
+
+export interface AnyLogicState {
+  time: number
+  pending: number
+  done: number
+  bounds: {
+    minX: number
+    maxX: number
+    minY: number
+    maxY: number
+  }
+  forklifts: AnyLogicForklift[]
+  cells: AnyLogicCell[]
+}
