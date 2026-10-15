@@ -6,6 +6,8 @@ import { convertCellToCoords } from '@/api/converter'
 import { FORKLIFT_ID } from '@/config'
 import type { Cell, Coordinates } from '@/types/api'
 import CellMaskInput from './CellMaskInput'
+import { postAnyLogicOrder } from '@/api/anylogic'
+import { useAnyLogicQuery } from '@/components/Instruments/useAnyLogicQuery'
 
 const DIGIT_SLOTS = 3
 
@@ -23,6 +25,7 @@ export default function TaskCreationForm() {
   const { data: cellsResult, isLoading: cellsLoading } = useAvailableCells()
   const { data: tasks } = useTasksQuery()
   const createTaskMutation = useCreateTask()
+  const anylogicState = useAnyLogicQuery()
   const cells: Cell[] = cellsResult?.data ?? []
 
   const activeCellKeys = useMemo(() => {
@@ -101,6 +104,14 @@ export default function TaskCreationForm() {
 
   useEffect(() => {
     if (createTaskMutation.isSuccess) {
+      if (selectedCell !== null && anylogicState?.cells && anylogicState.cells.length > 0) {
+        const alCell = anylogicState.cells.find(c => c.col === selectedCell.x && c.row === selectedCell.z)
+        if (alCell !== undefined) {
+          void postAnyLogicOrder(0, alCell.id)
+        } else {
+          console.warn('[AnyLogic] no matching cell for', selectedCell.x, selectedCell.z)
+        }
+      }
       setDigits('')
       setSelectedCell(null)
       setCoords(null)
@@ -109,7 +120,7 @@ export default function TaskCreationForm() {
       setConverterError(null)
       createTaskMutation.reset()
     }
-  }, [createTaskMutation.isSuccess, createTaskMutation])
+  }, [createTaskMutation.isSuccess, createTaskMutation, selectedCell, anylogicState])
 
   function handleSelectSuggestion(cell: Cell) {
     handleDigitsChange(`${cell.x}${cell.y}${cell.z}`)
