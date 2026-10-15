@@ -3,6 +3,7 @@ import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
 import { useTasksQuery } from '@/components/TaskList/useTasksQuery'
 import { useAllCellsQuery } from './useAllCellsQuery'
 import { useWaypointDriver } from './useWaypointDriver'
+import { useAnyLogicQuery } from './useAnyLogicQuery'
 
 interface WarehouseMapProps {
   forkliftCell: { x: number; y: number }
@@ -41,6 +42,7 @@ export default function WarehouseMap({
   const { data } = useForkliftQuery()
   const { data: tasks } = useTasksQuery()
   const allCells = useAllCellsQuery()
+  const { data: anylogicData } = useAnyLogicQuery()
 
   const forkliftCell = data
     ? { x: data.cell_x, y: data.cell_z }
@@ -74,8 +76,33 @@ export default function WarehouseMap({
     cellMap.set(key, existing === false ? false : cell.available)
   }
 
-  const svgWidth  = derivedCols * CELL_SIZE
-  const svgHeight = derivedRows * CELL_SIZE
+  // AnyLogic mode: use simulation data if available and non-empty
+  // T-19-03 guard: if bounds are degenerate (maxX===minX or maxY===minY), fallback to 1C
+  const anylogicBoundsValid =
+    anylogicData != null &&
+    anylogicData.cells.length > 0 &&
+    anylogicData.bounds.maxX !== anylogicData.bounds.minX &&
+    anylogicData.bounds.maxY !== anylogicData.bounds.minY
+
+  const useAnyLogic = anylogicBoundsValid && anylogicData != null
+
+  // SVG dimensions — fixed constants for AnyLogic mode; derived from cellMap for fallback mode
+  const SVG_WIDTH = 600
+  const SVG_HEIGHT = 400
+
+  const svgWidth  = useAnyLogic ? SVG_WIDTH : derivedCols * CELL_SIZE
+  const svgHeight = useAnyLogic ? SVG_HEIGHT : derivedRows * CELL_SIZE
+
+  // Scaling functions for AnyLogic simulation coordinates → SVG pixel coordinates
+  const scaleX = (px: number): number => {
+    if (!useAnyLogic || anylogicData == null) return px
+    return ((px - anylogicData.bounds.minX) / (anylogicData.bounds.maxX - anylogicData.bounds.minX)) * SVG_WIDTH
+  }
+  const scaleY = (py: number): number => {
+    if (!useAnyLogic || anylogicData == null) return py
+    return ((py - anylogicData.bounds.minY) / (anylogicData.bounds.maxY - anylogicData.bounds.minY)) * SVG_HEIGHT
+  }
+
   const tgt = cellToPixel(targetCell.x, targetCell.y)
 
   const { px: animPx, py: animPy, pendingWaypoints } = useWaypointDriver(activeTask, forkliftCell)
@@ -111,38 +138,97 @@ export default function WarehouseMap({
           <rect x="0" y="0" width={svgWidth} height={svgHeight} fill="rgba(0,0,0,0.3)" />
 
           {/* Cell background layer */}
-          {(() => {
-            const rects: ReactElement[] = []
-            cellMap.forEach((available, key) => {
-              const [cx, cz] = key.split(':').map(Number)
-              const isTarget = cx === targetCell.x && cz === targetCell.y
-              let fill: string
-              let stroke = 'none'
-              let strokeWidth = '0'
-              if (isTarget) {
-                fill = 'rgba(255,170,0,0.14)'
-                stroke = '#ffaa00'
-                strokeWidth = '1'
-              } else if (!available) {
-                fill = 'rgba(255,170,0,0.18)'
-              } else {
-                fill = 'rgba(0,255,255,0.04)'
-              }
-              rects.push(
-                <rect
-                  key={key}
-                  x={cellDispX(cx) * CELL_SIZE}
-                  y={cz * CELL_SIZE}
-                  width={CELL_SIZE}
-                  height={CELL_SIZE}
-                  fill={fill}
-                  stroke={stroke}
-                  strokeWidth={strokeWidth}
-                />
-              )
-            })
-            return rects
-          })()}
+          {useAnyLogic && anylogicData != null
+            ? (() => {
+                // AnyLogic mode: render cells at proportional simulation coordinates
+                const elements: ReactElement[] = []
+                for (const cell of anylogicData.cells) {
+                  const rectX = scaleX(cell.centerX)
+                  const rectY = scaleY(cell.centerY)
+                  const isTarget = cell.col === targetCell.x && cell.row === targetCell.y
+                  let fill: string
+                  let stroke = 'none'
+                  let strokeWidth = '0'
+
+                  if (isTarget) {
+                    fill = 'rgba(255,170,0,0.14)'
+                    stroke = '#ffaa00'
+                    strokeWidth = '1'
+                  } else {
+                    // D-03 merge: look up 1C availability by col=x, row=z
+                    const onecAvailable = cellMap.get(`${cell.col}:${cell.row}`)
+                    if (onecAvailable !== undefined) {
+                      // Cell exists in 1C — use 1C available status for primary color
+                      fill = onecAvailable ? 'rgba(0,255,255,0.04)' : 'rgba(255,170,0,0.18)'
+                    } else {
+                      // AnyLogic-only cell — use occupied status
+                      fill = cell.occupied ? 'rgba(255,170,0,0.18)' : 'rgba(0,255,255,0.04)'
+                    }
+                  }
+
+                  elements.push(
+                    <rect
+                      key={`al-${cell.id}`}
+                      x={rectX - 10}
+                      y={rectY - 10}
+                      width={CELL_SIZE}
+                      height={CELL_SIZE}
+                      fill={fill}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
+                    />
+                  )
+
+                  // Amber dot: 1C says available=true but AnyLogic says occupied=true
+                  const onecAvailableForDot = cellMap.get(`${cell.col}:${cell.row}`)
+                  if (!isTarget && onecAvailableForDot === true && cell.occupied) {
+                    elements.push(
+                      <circle
+                        key={`al-dot-${cell.id}`}
+                        cx={rectX + 8}
+                        cy={rectY - 8}
+                        r={3}
+                        fill="#ffaa00"
+                      />
+                    )
+                  }
+                }
+                return elements
+              })()
+            : (() => {
+                // Fallback mode: render cells from 1C cellMap (existing behavior)
+                const rects: ReactElement[] = []
+                cellMap.forEach((available, key) => {
+                  const [cx, cz] = key.split(':').map(Number)
+                  const isTarget = cx === targetCell.x && cz === targetCell.y
+                  let fill: string
+                  let stroke = 'none'
+                  let strokeWidth = '0'
+                  if (isTarget) {
+                    fill = 'rgba(255,170,0,0.14)'
+                    stroke = '#ffaa00'
+                    strokeWidth = '1'
+                  } else if (!available) {
+                    fill = 'rgba(255,170,0,0.18)'
+                  } else {
+                    fill = 'rgba(0,255,255,0.04)'
+                  }
+                  rects.push(
+                    <rect
+                      key={key}
+                      x={cellDispX(cx) * CELL_SIZE}
+                      y={cz * CELL_SIZE}
+                      width={CELL_SIZE}
+                      height={CELL_SIZE}
+                      fill={fill}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
+                    />
+                  )
+                })
+                return rects
+              })()
+          }
 
           {/* Waypoint highlight layer — local pending queue (always in sync with animation) */}
           {pendingWaypoints
