@@ -258,13 +258,34 @@ export default function WarehouseMap({
           )}
 
           {/* Forklift */}
-          <g transform={`translate(${animPx}, ${animPy})`}>
-            <polygon
-              points="0,-8 -6,5 6,5"
-              fill="#00ffff"
-              transform={`rotate(${forkliftDirection})`}
-            />
-          </g>
+          {useAnyLogic && anylogicData != null && anylogicData.forklifts.length > 0
+            ? (() => {
+                // AnyLogic mode: CSS style.transform with transition for smooth animation
+                // Phase 13 decision: CSS transition on SVG transform attribute does NOT animate —
+                // must use style.transform for CSS transition to work
+                const forkliftPx = scaleX(anylogicData.forklifts[0].x)
+                const forkliftPy = scaleY(anylogicData.forklifts[0].y)
+                return (
+                  <g style={{ transform: `translate(${forkliftPx}px, ${forkliftPy}px)`, transition: 'transform 0.5s ease' }}>
+                    <polygon
+                      points="0,-8 -6,5 6,5"
+                      fill="#00ffff"
+                      transform={`rotate(${forkliftDirection})`}
+                    />
+                  </g>
+                )
+              })()
+            : (
+                // Fallback mode: existing useWaypointDriver animation via SVG transform attribute
+                <g transform={`translate(${animPx}, ${animPy})`}>
+                  <polygon
+                    points="0,-8 -6,5 6,5"
+                    fill="#00ffff"
+                    transform={`rotate(${forkliftDirection})`}
+                  />
+                </g>
+              )
+          }
         </svg>
       </div>
 
