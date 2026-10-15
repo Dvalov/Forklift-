@@ -42,7 +42,7 @@ export default function WarehouseMap({
   const { data } = useForkliftQuery()
   const { data: tasks } = useTasksQuery()
   const allCells = useAllCellsQuery()
-  const { data: anylogicData } = useAnyLogicQuery()
+  const anylogicData = useAnyLogicQuery()
 
   const forkliftCell = data
     ? { x: data.cell_x, y: data.cell_z }
