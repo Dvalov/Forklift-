@@ -26,6 +26,9 @@ export interface Task {
   dest_cell_x: number
   dest_cell_y: number
   dest_cell_z: number
+  source_cell_x: number
+  source_cell_y: number
+  source_cell_z: number
   path_waypoints: Array<{ x: number; z: number }> // A* route grid coords; {x: column, z: row}; empty [] when task is pending
   created_at: string
   updated_at: string
@@ -53,6 +56,9 @@ export interface CreateTaskPayload {
   dest_cell_x: number
   dest_cell_y: number
   dest_cell_z: number
+  source_cell_x: number
+  source_cell_y: number
+  source_cell_z: number
 }
 
 export interface AnyLogicCell {
