@@ -8,6 +8,7 @@ import type { Cell, Coordinates } from '@/types/api'
 import CellMaskInput from './CellMaskInput'
 import { postAnyLogicOrder } from '@/api/anylogic'
 import { useAnyLogicQuery } from '@/components/Instruments/useAnyLogicQuery'
+import { useAllCellsQuery } from '@/components/Instruments/useAllCellsQuery'
 
 const DIGIT_SLOTS = 3
 
@@ -27,6 +28,7 @@ export default function TaskCreationForm() {
   const createTaskMutation = useCreateTask()
   const anylogicState = useAnyLogicQuery()
   const cells: Cell[] = cellsResult?.data ?? []
+  const allCells: Cell[] = useAllCellsQuery()
 
   const activeCellKeys = useMemo(() => {
     const active = (tasks ?? []).filter(t => t.status === 'pending' || t.status === 'in_progress')
@@ -38,6 +40,12 @@ export default function TaskCreationForm() {
     [cells, activeCellKeys],
   )
 
+  // Source cell state
+  const [sourceDigits, setSourceDigits] = useState('')
+  const [sourceCell, setSourceCell] = useState<Cell | null>(null)
+  const [sourceCellError, setSourceCellError] = useState<string | null>(null)
+
+  // Dest cell state
   const [digits, setDigits] = useState('')
   const [selectedCell, setSelectedCell] = useState<Cell | null>(null)
   const [cellError, setCellError] = useState<string | null>(null)
@@ -57,6 +65,34 @@ export default function TaskCreationForm() {
     } else {
       setCoords(result.data)
     }
+  }
+
+  function handleSourceDigitsChange(newDigits: string) {
+    setSourceDigits(newDigits)
+    setSourceCell(null)
+    setSourceCellError(null)
+
+    if (newDigits.length < DIGIT_SLOTS) return
+
+    const [x, y, z] = [
+      parseInt(newDigits[0], 10),
+      parseInt(newDigits[1], 10),
+      parseInt(newDigits[2], 10),
+    ]
+    const cell = allCells.find(c => c.x === x && c.y === y && c.z === z)
+
+    if (!cell) {
+      setSourceCellError('Ячейка не найдена')
+      return
+    }
+
+    setSourceCell(cell)
+  }
+
+  function handleSourceSelectSuggestion(cell: Cell) {
+    handleSourceDigitsChange(`${cell.x}${cell.y}${cell.z}`)
+    setSourceCell(cell)
+    setSourceCellError(null)
   }
 
   function handleDigitsChange(newDigits: string) {
@@ -104,14 +140,18 @@ export default function TaskCreationForm() {
 
   useEffect(() => {
     if (createTaskMutation.isSuccess) {
-      if (selectedCell !== null && anylogicState?.cells && anylogicState.cells.length > 0) {
-        const alCell = anylogicState.cells.find(c => c.col === selectedCell.x && c.row === selectedCell.z)
-        if (alCell !== undefined) {
-          void postAnyLogicOrder(0, alCell.id)
+      if (sourceCell !== null && selectedCell !== null && anylogicState != null && (anylogicState.cells?.length ?? 0) > 0) {
+        const alSource = anylogicState.cells.find(c => c.col === sourceCell.x && c.row === sourceCell.z)
+        const alDest   = anylogicState.cells.find(c => c.col === selectedCell.x && c.row === selectedCell.z)
+        if (alSource !== undefined && alDest !== undefined) {
+          void postAnyLogicOrder(alSource.id, alDest.id)
         } else {
-          console.warn('[AnyLogic] no matching cell for', selectedCell.x, selectedCell.z)
+          console.warn('[AnyLogic] cell lookup failed', { source: sourceCell, dest: selectedCell })
         }
       }
+      setSourceDigits('')
+      setSourceCell(null)
+      setSourceCellError(null)
       setDigits('')
       setSelectedCell(null)
       setCoords(null)
@@ -120,7 +160,7 @@ export default function TaskCreationForm() {
       setConverterError(null)
       createTaskMutation.reset()
     }
-  }, [createTaskMutation.isSuccess, createTaskMutation, selectedCell, anylogicState])
+  }, [createTaskMutation.isSuccess, createTaskMutation, sourceCell, selectedCell, anylogicState])
 
   function handleSelectSuggestion(cell: Cell) {
     handleDigitsChange(`${cell.x}${cell.y}${cell.z}`)
@@ -131,7 +171,7 @@ export default function TaskCreationForm() {
   }
 
   function handleSubmit() {
-    if (!selectedCell || !coords) return
+    if (!sourceCell || !selectedCell || !coords) return
     createTaskMutation.mutate({
       forklift_id: Number(FORKLIFT_ID),
       dest_x: coords.x,
@@ -140,11 +180,14 @@ export default function TaskCreationForm() {
       dest_cell_x: selectedCell.x,
       dest_cell_y: selectedCell.y,
       dest_cell_z: selectedCell.z,
+      source_cell_x: sourceCell.x,
+      source_cell_y: sourceCell.y,
+      source_cell_z: sourceCell.z,
     })
   }
 
   const isSubmitDisabled =
-    !selectedCell || !coords || converterLoading || createTaskMutation.isPending
+    !sourceCell || !selectedCell || !coords || converterLoading || createTaskMutation.isPending
 
   const submitLabel =
     converterLoading || createTaskMutation.isPending ? '…' : 'Создать задачу'
@@ -172,39 +215,54 @@ export default function TaskCreationForm() {
       >
         Новая задача
       </h2>
-      <div className="flex items-center gap-3">
-        <div className="flex-1">
+      <div className="flex flex-col gap-3">
+        <div>
+          <label style={{ color: '#aaa', fontSize: 13, marginBottom: 4, display: 'block' }}>Откуда</label>
           <CellMaskInput
-            digits={digits}
-            onChange={handleDigitsChange}
-            suggestions={getSuggestions(digits, availableCells)}
-            onSelectSuggestion={handleSelectSuggestion}
+            digits={sourceDigits}
+            onChange={handleSourceDigitsChange}
+            suggestions={getSuggestions(sourceDigits, allCells)}
+            onSelectSuggestion={handleSourceSelectSuggestion}
             disabled={cellsLoading || createTaskMutation.isPending}
-            hasError={!!cellError}
+            hasError={!!sourceCellError}
           />
-          {cellWarn !== null && (
-            <p className="text-xs mt-1" style={{ color: '#ffaa00' }}>{cellWarn}</p>
-          )}
-          {(cellError !== null || converterError !== null) && (
-            <p className="text-xs mt-1" style={{ color: '#ff3366' }}>
-              {cellError ?? converterError}
-              {converterError !== null && (
-                <> —{' '}
-                  <button onClick={handleRetry} className="underline" style={{ color: '#ff3366' }}>
-                    Повторить
-                  </button>
-                </>
-              )}
-            </p>
-          )}
+          {sourceCellError && <div style={{ color: '#ff3366', fontSize: 12, marginTop: 4 }}>{sourceCellError}</div>}
         </div>
-        <button
-          disabled={isSubmitDisabled}
-          onClick={handleSubmit}
-          className="px-4 py-2 text-sm font-medium rounded-md bg-accent text-surface disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity flex-shrink-0"
-        >
-          {submitLabel}
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex-1">
+            <label style={{ color: '#aaa', fontSize: 13, marginBottom: 4, display: 'block' }}>Куда</label>
+            <CellMaskInput
+              digits={digits}
+              onChange={handleDigitsChange}
+              suggestions={getSuggestions(digits, availableCells)}
+              onSelectSuggestion={handleSelectSuggestion}
+              disabled={cellsLoading || createTaskMutation.isPending}
+              hasError={!!cellError}
+            />
+            {cellWarn !== null && (
+              <p className="text-xs mt-1" style={{ color: '#ffaa00' }}>{cellWarn}</p>
+            )}
+            {(cellError !== null || converterError !== null) && (
+              <p className="text-xs mt-1" style={{ color: '#ff3366' }}>
+                {cellError ?? converterError}
+                {converterError !== null && (
+                  <> —{' '}
+                    <button onClick={handleRetry} className="underline" style={{ color: '#ff3366' }}>
+                      Повторить
+                    </button>
+                  </>
+                )}
+              </p>
+            )}
+          </div>
+          <button
+            disabled={isSubmitDisabled}
+            onClick={handleSubmit}
+            className="px-4 py-2 text-sm font-medium rounded-md bg-accent text-surface disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity flex-shrink-0 self-end"
+          >
+            {submitLabel}
+          </button>
+        </div>
       </div>
       {createTaskMutation.isError && (
         <p className="text-xs mt-2" style={{ color: '#ff3366' }}>
