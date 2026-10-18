@@ -27,6 +27,7 @@ class TaskSerializer(serializers.ModelSerializer):
         model = Task
         fields = ['id', 'forklift_id', 'status', 'origin_x', 'origin_y', 'origin_z',
                   'dest_x', 'dest_y', 'dest_z', 'dest_cell_x', 'dest_cell_y', 'dest_cell_z',
+                  'source_cell_x', 'source_cell_y', 'source_cell_z',
                   'path_waypoints', 'created_at', 'updated_at']
         read_only_fields = ['id', 'forklift_id', 'path_waypoints', 'created_at', 'updated_at']
 
@@ -42,6 +43,9 @@ class TaskCreateSerializer(serializers.Serializer):
     origin_x = serializers.FloatField(required=False, default=0)
     origin_y = serializers.FloatField(required=False, default=0)
     origin_z = serializers.FloatField(required=False, default=0)
+    source_cell_x = serializers.IntegerField(required=False, default=0)
+    source_cell_y = serializers.IntegerField(required=False, default=0)
+    source_cell_z = serializers.IntegerField(required=False, default=0)
 
 
 class TaskUpdateSerializer(serializers.ModelSerializer):
