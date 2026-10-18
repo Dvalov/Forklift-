@@ -10,7 +10,7 @@ export function useAnyLogicQuery(): AnyLogicState | null {
       if (error || !data) return null
       return data
     },
-    staleTime: 3000,
+    staleTime: 0,
     refetchInterval: 3000,
     refetchIntervalInBackground: true,
     retry: false,
