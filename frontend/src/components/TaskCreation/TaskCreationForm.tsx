@@ -158,6 +158,7 @@ export default function TaskCreationForm() {
     converterLoading || createTaskMutation.isPending ? '…' : 'Создать задачу'
 
   return (
+    <>
     <section
       className="rounded-2xl p-4"
       style={{
@@ -238,5 +239,6 @@ export default function TaskCreationForm() {
       )}
     </section>
     <Toast message="Задача создана" visible={toastVisible} onHide={() => setToastVisible(false)} />
+    </>
   )
 }
