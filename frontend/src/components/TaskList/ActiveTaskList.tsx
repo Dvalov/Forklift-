@@ -91,7 +91,7 @@ export default function ActiveTaskList() {
         >
           <span className="w-8 flex-shrink-0 text-center">№</span>
           <span className="w-28 flex-shrink-0">Статус</span>
-          <span className="flex-1">Ячейка</span>
+          <span className="flex-1">Маршрут</span>
           <span className="w-20 flex-shrink-0 text-right">Дата</span>
           <span className="w-14 flex-shrink-0" />
         </div>

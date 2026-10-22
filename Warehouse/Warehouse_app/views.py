@@ -37,7 +37,7 @@ class CellListView(APIView):
 
             # Формируем ответ в указанном формате
             result = [
-                {"id": cell.id, "x": cell.x, "y": cell.y, "z": cell.z, "available": cell.available}
+                {"id": cell.id, "x": cell.x, "y": cell.y, "z": cell.z, "name": cell.name, "available": cell.available}
                 for cell in cells_queryset
             ]
 
@@ -185,6 +185,7 @@ class SyncFromOneCView(APIView):
         field_y       = os.getenv('ONEC_FIELD_Y', 'y')
         field_z       = os.getenv('ONEC_FIELD_Z', 'z')
         field_avail   = os.getenv('ONEC_FIELD_AVAILABLE', 'available')
+        field_name    = os.getenv('ONEC_FIELD_NAME', 'name')
         root_key      = os.getenv('ONEC_ROOT_KEY', '')
 
         # STEP 3 — guard: ONEC_API_URL not configured
@@ -230,7 +231,10 @@ class SyncFromOneCView(APIView):
                         x=int(item[field_x]),
                         y=int(item[field_y]),
                         z=int(item[field_z]),
-                        defaults={'available': bool(item.get(field_avail, True))},
+                        defaults={
+                            'available': bool(item.get(field_avail, True)),
+                            'name': str(item.get(field_name, '')),
+                        },
                     )
                     seen_ids.append(cell.pk)
                     synced += 1
