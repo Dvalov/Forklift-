@@ -24,6 +24,11 @@ body {
   flex-direction: column;
 }
 
+@keyframes pulse-target {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
 @keyframes marching-ants {
   from { stroke-dashoffset: 0; }
   to   { stroke-dashoffset: -24; }

@@ -9,6 +9,7 @@ import CellNameInput from './CellNameInput'
 import { postAnyLogicOrder } from '@/api/anylogic'
 import { useAnyLogicQuery } from '@/components/Instruments/useAnyLogicQuery'
 import { useAllCellsQuery } from '@/components/Instruments/useAllCellsQuery'
+import Toast from '@/components/ui/Toast'
 
 export default function TaskCreationForm() {
   const availableCellsRaw: Cell[] = useAvailableCells()
@@ -16,6 +17,7 @@ export default function TaskCreationForm() {
   const createTaskMutation = useCreateTask()
   const anylogicState = useAnyLogicQuery()
   const allCells: Cell[] = useAllCellsQuery()
+  const [toastVisible, setToastVisible] = useState(false)
 
   const activeCellKeys = useMemo(() => {
     const active = (tasks ?? []).filter(t => t.status === 'pending' || t.status === 'in_progress')
@@ -113,6 +115,7 @@ export default function TaskCreationForm() {
           console.warn('[AnyLogic] cell lookup failed', { source: sourceCell, dest: selectedCell })
         }
       }
+      setToastVisible(true)
       setSourceQuery('')
       setSourceCell(null)
       setSourceCellError(null)
@@ -234,5 +237,6 @@ export default function TaskCreationForm() {
         </p>
       )}
     </section>
+    <Toast message="Задача создана" visible={toastVisible} onHide={() => setToastVisible(false)} />
   )
 }
