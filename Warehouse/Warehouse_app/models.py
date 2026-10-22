@@ -15,6 +15,7 @@ class Cell(models.Model):
     x = models.IntegerField()
     y = models.IntegerField()
     z = models.IntegerField()
+    name = models.CharField(max_length=50, blank=True, default='')
     available = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -162,6 +162,11 @@ class TaskViewSet(viewsets.ModelViewSet):
             origin_x=data['origin_x'],
             origin_y=data['origin_y'],
             origin_z=data['origin_z'],
+            source_cell_x=data['source_cell_x'],
+            source_cell_y=data['source_cell_y'],
+            source_cell_z=data['source_cell_z'],
+            source_cell_name=data['source_cell_name'],
+            dest_cell_name=data['dest_cell_name'],
         )
 
         return Response(TaskSerializer(task).data, status=status.HTTP_201_CREATED)

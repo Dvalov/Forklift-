@@ -65,6 +65,11 @@ class Task(models.Model):
     dest_cell_x = models.IntegerField(default=1)
     dest_cell_y = models.IntegerField(default=1)
     dest_cell_z = models.IntegerField(default=1)
+    source_cell_x = models.IntegerField(default=0)
+    source_cell_y = models.IntegerField(default=0)
+    source_cell_z = models.IntegerField(default=0)
+    source_cell_name = models.CharField(max_length=100, blank=True, default='')
+    dest_cell_name = models.CharField(max_length=100, blank=True, default='')
     path_waypoints = models.JSONField(default=list)  # list of {"x": int, "z": int} dicts
     frontend_advanced_at = models.DateTimeField(null=True, blank=True, default=None)
 

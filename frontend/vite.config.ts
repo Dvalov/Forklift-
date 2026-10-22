@@ -11,6 +11,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/api/anylogic': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+      },
       '/api/warehouse': {
         target: 'http://localhost:8001',
         changeOrigin: true,

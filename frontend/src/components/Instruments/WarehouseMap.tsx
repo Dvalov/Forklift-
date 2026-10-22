@@ -42,7 +42,7 @@ export default function WarehouseMap({
   const { data } = useForkliftQuery()
   const { data: tasks } = useTasksQuery()
   const allCells = useAllCellsQuery()
-  const { data: anylogicData } = useAnyLogicQuery()
+  const anylogicData = useAnyLogicQuery()
 
   const forkliftCell = data
     ? { x: data.cell_x, y: data.cell_z }
@@ -57,7 +57,7 @@ export default function WarehouseMap({
     ? { x: activeTask.dest_cell_x, y: activeTask.dest_cell_z }
     : fallbackTargetCell
   const targetLabel = activeTask
-    ? `ячейка ${activeTask.dest_cell_x} · ${activeTask.dest_cell_y} · ${activeTask.dest_cell_z}`
+    ? (activeTask.dest_cell_name || `${activeTask.dest_cell_x}·${activeTask.dest_cell_y}·${activeTask.dest_cell_z}`)
     : fallbackTargetLabel
 
   const maxCellX = allCells.length > 0
@@ -151,9 +151,9 @@ export default function WarehouseMap({
                   let strokeWidth = '0'
 
                   if (isTarget) {
-                    fill = 'rgba(255,170,0,0.14)'
-                    stroke = '#ffaa00'
-                    strokeWidth = '1'
+                    fill = 'rgba(160,80,255,0.25)'
+                    stroke = '#a050ff'
+                    strokeWidth = '1.5'
                   } else {
                     // D-03 merge: look up 1C availability by col=x, row=z
                     const onecAvailable = cellMap.get(`${cell.col}:${cell.row}`)
@@ -176,6 +176,7 @@ export default function WarehouseMap({
                       fill={fill}
                       stroke={stroke}
                       strokeWidth={strokeWidth}
+                      style={isTarget ? { animation: 'pulse-target 1.5s ease-in-out infinite' } : undefined}
                     />
                   )
 
@@ -205,9 +206,9 @@ export default function WarehouseMap({
                   let stroke = 'none'
                   let strokeWidth = '0'
                   if (isTarget) {
-                    fill = 'rgba(255,170,0,0.14)'
-                    stroke = '#ffaa00'
-                    strokeWidth = '1'
+                    fill = 'rgba(160,80,255,0.25)'
+                    stroke = '#a050ff'
+                    strokeWidth = '1.5'
                   } else if (!available) {
                     fill = 'rgba(255,170,0,0.18)'
                   } else {
@@ -223,6 +224,7 @@ export default function WarehouseMap({
                       fill={fill}
                       stroke={stroke}
                       strokeWidth={strokeWidth}
+                      style={isTarget ? { animation: 'pulse-target 1.5s ease-in-out infinite' } : undefined}
                     />
                   )
                 })
@@ -266,7 +268,7 @@ export default function WarehouseMap({
                 const forkliftPx = scaleX(anylogicData.forklifts[0].x)
                 const forkliftPy = scaleY(anylogicData.forklifts[0].y)
                 return (
-                  <g style={{ transform: `translate(${forkliftPx}px, ${forkliftPy}px)`, transition: 'transform 0.5s ease' }}>
+                  <g style={{ transform: `translate(${forkliftPx}px, ${forkliftPy}px)`, transition: 'transform 0.5s linear' }}>
                     <polygon
                       points="0,-8 -6,5 6,5"
                       fill="#00ffff"

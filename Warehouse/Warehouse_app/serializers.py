@@ -6,7 +6,7 @@ class CellSerializer(serializers.ModelSerializer):
     """Сериализатор для ячейки"""
     class Meta:
         model = Cell
-        fields = ['id', 'x', 'y', 'z', 'available', 'warehouse_id']
+        fields = ['id', 'x', 'y', 'z', 'name', 'available', 'warehouse_id']
         read_only_fields = ['id', 'warehouse_id']
 
 class CellListSerializer(serializers.Serializer):

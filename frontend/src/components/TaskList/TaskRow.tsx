@@ -37,7 +37,9 @@ export default function TaskRow({ task, queuePosition }: TaskRowProps) {
     restoreMutation.isError ? 'Восстановление не удалось' :
     task.status === 'pending' ? 'Отмена не удалась' : 'Удаление не удалось'
 
-  const cellAddress = `${task.dest_cell_x} · ${task.dest_cell_y} · ${task.dest_cell_z}`
+  const srcLabel = task.source_cell_name || `${task.source_cell_x}·${task.source_cell_y}·${task.source_cell_z}`
+  const dstLabel = task.dest_cell_name || `${task.dest_cell_x}·${task.dest_cell_y}·${task.dest_cell_z}`
+  const cellAddress = `${srcLabel} → ${dstLabel}`
   const date = new Date(task.created_at).toLocaleDateString('ru-RU', {
     day: '2-digit',
     month: '2-digit',
