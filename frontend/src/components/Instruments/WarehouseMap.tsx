@@ -3,7 +3,7 @@ import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
 import { useTasksQuery } from '@/components/TaskList/useTasksQuery'
 import { useAllCellsQuery } from './useAllCellsQuery'
 import { useWaypointDriver } from './useWaypointDriver'
-import { useAnyLogicQuery } from './useAnyLogicQuery'
+import { useAnyLogicStream } from './useAnyLogicStream'
 
 interface WarehouseMapProps {
   forkliftCell: { x: number; y: number }
@@ -42,7 +42,7 @@ export default function WarehouseMap({
   const { data } = useForkliftQuery()
   const { data: tasks } = useTasksQuery()
   const allCells = useAllCellsQuery()
-  const anylogicData = useAnyLogicQuery()
+  const anylogicData = useAnyLogicStream()
 
   const forkliftCell = data
     ? { x: data.cell_x, y: data.cell_z }
@@ -268,7 +268,7 @@ export default function WarehouseMap({
                 const forkliftPx = scaleX(anylogicData.forklifts[0].x)
                 const forkliftPy = scaleY(anylogicData.forklifts[0].y)
                 return (
-                  <g style={{ transform: `translate(${forkliftPx}px, ${forkliftPy}px)`, transition: 'transform 0.5s linear' }}>
+                  <g style={{ transform: `translate(${forkliftPx}px, ${forkliftPy}px)`, transition: 'transform 0.15s linear' }}>
                     <polygon
                       points="0,-8 -6,5 6,5"
                       fill="#00ffff"
