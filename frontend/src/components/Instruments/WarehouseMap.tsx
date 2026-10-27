@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react'
+import { type ReactElement, useRef, useState, useEffect } from 'react'
 import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
 import { useTasksQuery } from '@/components/TaskList/useTasksQuery'
 import { useAllCellsQuery } from './useAllCellsQuery'
@@ -44,6 +44,12 @@ export default function WarehouseMap({
   const allCells = useAllCellsQuery()
   const anylogicData = useAnyLogicStream()
 
+  // Phase: source → dest → done (AnyLogic proximity-driven)
+  const arrivedAtSourceRef = useRef(false)
+  const arrivedAtDestRef   = useRef(false)
+  const lastTaskIdRef      = useRef<number | null>(null)
+  const [phase, setPhase]  = useState<'source' | 'dest' | 'done'>('source')
+
   const forkliftCell = data
     ? { x: data.cell_x, y: data.cell_z }
     : fallbackCell
@@ -53,12 +59,7 @@ export default function WarehouseMap({
     : fallbackPosition
 
   const activeTask = tasks?.find(t => t.status === 'in_progress') ?? null
-  const targetCell = activeTask
-    ? { x: activeTask.dest_cell_x, y: activeTask.dest_cell_z }
-    : fallbackTargetCell
-  const targetLabel = activeTask
-    ? (activeTask.dest_cell_name || `${activeTask.dest_cell_x}·${activeTask.dest_cell_y}·${activeTask.dest_cell_z}`)
-    : fallbackTargetLabel
+  const targetTask = tasks?.find(t => t.status === 'in_progress' || t.status === 'pending') ?? null
 
   const maxCellX = allCells.length > 0
     ? Math.max(...allCells.map(c => c.x))
@@ -85,6 +86,60 @@ export default function WarehouseMap({
     anylogicData.bounds.maxY !== anylogicData.bounds.minY
 
   const useAnyLogic = anylogicBoundsValid && anylogicData != null
+
+  // Reset phase when task changes
+  useEffect(() => {
+    if (targetTask?.id === lastTaskIdRef.current) return
+    lastTaskIdRef.current = targetTask?.id ?? null
+    arrivedAtSourceRef.current = false
+    arrivedAtDestRef.current   = false
+    setPhase('source')
+  }, [targetTask?.id]) // eslint-disable-line
+
+  // Proximity detection — drives phase source → dest → done
+  useEffect(() => {
+    if (!useAnyLogic || !anylogicData || !targetTask || anylogicData.forklifts.length === 0) return
+    if (arrivedAtDestRef.current) return
+    const fl = anylogicData.forklifts[0]
+
+    // Use minimum non-zero gap between sorted centerX values as cell width estimate
+    const xs = anylogicData.cells.map(c => c.centerX).sort((a, b) => a - b)
+    let minDx = Infinity
+    for (let i = 1; i < xs.length; i++) {
+      const d = xs[i] - xs[i - 1]
+      if (d > 1e-6 && d < minDx) minDx = d
+    }
+    const threshold = (isFinite(minDx) ? minDx : (anylogicData.bounds.maxX - anylogicData.bounds.minX) / 10) * 0.5
+
+    if (!arrivedAtSourceRef.current) {
+      const srcAL = anylogicData.cells.find(c => c.name === targetTask.source_cell_name)
+      if (srcAL && Math.hypot(fl.x - srcAL.centerX, fl.y - srcAL.centerY) < threshold) {
+        arrivedAtSourceRef.current = true
+        setPhase('dest')
+      }
+    } else {
+      const dstAL = anylogicData.cells.find(c => c.name === targetTask.dest_cell_name)
+      if (dstAL && Math.hypot(fl.x - dstAL.centerX, fl.y - dstAL.centerY) < threshold) {
+        arrivedAtDestRef.current = true
+        setPhase('done')
+      }
+    }
+  }, [anylogicData]) // eslint-disable-line
+
+  // In AnyLogic mode: phase drives what to show; fallback: Django status
+  const showDest = useAnyLogic ? phase === 'dest' : targetTask?.status !== 'pending'
+  const showNone = useAnyLogic ? phase === 'done' : !targetTask
+
+  const targetCell = !targetTask || showNone
+    ? fallbackTargetCell
+    : showDest
+      ? { x: targetTask.dest_cell_x, y: targetTask.dest_cell_z }
+      : { x: targetTask.source_cell_x, y: targetTask.source_cell_z }
+  const targetLabel = !targetTask || showNone
+    ? fallbackTargetLabel
+    : showDest
+      ? (targetTask.dest_cell_name || `${targetTask.dest_cell_x}·${targetTask.dest_cell_y}·${targetTask.dest_cell_z}`)
+      : (targetTask.source_cell_name || `${targetTask.source_cell_x}·${targetTask.source_cell_y}·${targetTask.source_cell_z}`)
 
   // SVG dimensions — fixed constants for AnyLogic mode; derived from cellMap for fallback mode
   const SVG_WIDTH = 600
@@ -145,15 +200,15 @@ export default function WarehouseMap({
                 for (const cell of anylogicData.cells) {
                   const rectX = scaleX(cell.centerX)
                   const rectY = scaleY(cell.centerY)
-                  const isTarget = cell.col === targetCell.x && cell.row === targetCell.y
+                  const isTarget = !!targetLabel && cell.name === targetLabel
                   let fill: string
                   let stroke = 'none'
                   let strokeWidth = '0'
 
                   if (isTarget) {
-                    fill = 'rgba(160,80,255,0.25)'
-                    stroke = '#a050ff'
-                    strokeWidth = '1.5'
+                    fill = 'rgba(160,80,255,0.55)'
+                    stroke = '#cc66ff'
+                    strokeWidth = '3'
                   } else {
                     // D-03 merge: look up 1C availability by col=x, row=z
                     const onecAvailable = cellMap.get(`${cell.col}:${cell.row}`)
@@ -176,7 +231,8 @@ export default function WarehouseMap({
                       fill={fill}
                       stroke={stroke}
                       strokeWidth={strokeWidth}
-                      style={isTarget ? { animation: 'pulse-target 1.5s ease-in-out infinite' } : undefined}
+                      strokeDasharray={isTarget ? '5 3' : undefined}
+                      style={isTarget ? { animation: 'pulse-target 1.2s ease-in-out infinite, marching-ants 0.5s linear infinite' } : undefined}
                     />
                   )
 
@@ -243,20 +299,24 @@ export default function WarehouseMap({
             ))
           }
 
-          {Array.from({ length: derivedCols + 1 }, (_, i) => (
+          {!useAnyLogic && Array.from({ length: derivedCols + 1 }, (_, i) => (
             <line key={`v${i}`} x1={i * CELL_SIZE} y1={0} x2={i * CELL_SIZE} y2={svgHeight} stroke="rgba(0,255,255,0.15)" strokeWidth="0.5" />
           ))}
-          {Array.from({ length: derivedRows + 1 }, (_, i) => (
+          {!useAnyLogic && Array.from({ length: derivedRows + 1 }, (_, i) => (
             <line key={`h${i}`} x1={0} y1={i * CELL_SIZE} x2={svgWidth} y2={i * CELL_SIZE} stroke="rgba(0,255,255,0.15)" strokeWidth="0.5" />
           ))}
 
-          {/* Target */}
-          <circle cx={tgt.px} cy={tgt.py} r="5" fill="none" stroke="#ffaa00" strokeWidth="1.5" />
-          <circle cx={tgt.px} cy={tgt.py} r="2" fill="#ffaa00" />
-          {targetLabel && (
-            <text x={tgt.px + 7} y={tgt.py - 4} fill="#ffaa00" fontSize="8" fontWeight="600">
-              {targetLabel}
-            </text>
+          {/* Target — only in fallback mode; AnyLogic mode uses pulsing cell rect */}
+          {!useAnyLogic && (
+            <>
+              <circle cx={tgt.px} cy={tgt.py} r="5" fill="none" stroke="#ffaa00" strokeWidth="1.5" />
+              <circle cx={tgt.px} cy={tgt.py} r="2" fill="#ffaa00" />
+              {targetLabel && (
+                <text x={tgt.px + 7} y={tgt.py - 4} fill="#ffaa00" fontSize="8" fontWeight="600">
+                  {targetLabel}
+                </text>
+              )}
+            </>
           )}
 
           {/* Forklift */}
