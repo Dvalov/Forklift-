@@ -1,5 +1,5 @@
 from django.test import TestCase
-from forklift_dashboard_app.pathfinding import astar
+from forklift_dashboard_app import astar
 
 
 class AstarTest(TestCase):

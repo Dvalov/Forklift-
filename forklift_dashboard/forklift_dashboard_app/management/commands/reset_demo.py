@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from forklift_dashboard_app.models import Forklift, Task
+from forklift_dashboard_app import Forklift, Task
 
 
 class Command(BaseCommand):
