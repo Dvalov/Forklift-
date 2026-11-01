@@ -59,11 +59,14 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'Warehouse.wsgi.application'  # замените Warehouse на имя вашего проекта
 
-# Database - ИСПРАВЛЕННАЯ СЕКЦИЯ
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
+        'NAME': os.getenv('DB_NAME', 'forklift'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+        'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
 

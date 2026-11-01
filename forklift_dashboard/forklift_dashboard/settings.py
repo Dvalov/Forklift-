@@ -24,8 +24,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 print(f"DEBUG: SECRET_KEY = {SECRET_KEY}")
-#FORKLIFT_ID = int(os.getenv('FORKLIFT_ID', 1))
-#WAREHOUSE_ID = int(os.getenv('WAREHOUSE_ID', 1))
+FORKLIFT_ID = int(os.getenv('FORKLIFT_ID', 1))
+WAREHOUSE_ID = int(os.getenv('WAREHOUSE_ID', 1))
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
@@ -81,16 +81,15 @@ WSGI_APPLICATION = "forklift_dashboard.wsgi.application"
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-        "OPTIONS": {
-            "timeout": 20,
-            "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
-        },
+    'default': {
+        'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
+        'NAME': os.getenv('DB_NAME', 'forklift'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+        'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators

@@ -1,4 +1,4 @@
-from forklift_dashboard_app.models import Forklift
+from forklift_dashboard_app import Forklift
 
 # Посмотрим всех погрузчиков
 for forklift in Forklift.objects.all():

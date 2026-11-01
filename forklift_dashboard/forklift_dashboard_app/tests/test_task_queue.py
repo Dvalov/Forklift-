@@ -1,7 +1,7 @@
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from rest_framework.test import APIClient
 from django.conf import settings
-from forklift_dashboard_app.models import Forklift, Task
+from forklift_dashboard_app import Forklift, Task
 
 
 class TestTaskAutoAssign(TestCase):
