@@ -1,5 +1,6 @@
 import atexit
 import logging
+import random
 
 import requests as http_requests
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -104,6 +105,13 @@ def simulation_tick():
      
             forklift.charge_level = max(0.0, forklift.charge_level - DISCHARGE_RATE)
 
+            # Hydraulics simulation — active movement
+            forklift.hydraulic_pressure = round(random.uniform(142.0, 158.0), 1)
+            forklift.oil_temp = round(min(80.0, forklift.oil_temp + 0.2), 1)
+            forklift.pump_rpm = random.randint(2750, 2900)
+            forklift.valves_ok = True
+            forklift.oil_level = round(max(0.0, forklift.oil_level - 0.01), 2)
+
             real = _fetch_real_coords(warehouse_id, forklift.cell_x, forklift.cell_y, forklift.cell_z)
             if real:
                 forklift.position_x = real['x']
@@ -118,6 +126,10 @@ def simulation_tick():
                 in_progress.save()
                 forklift.status = 'idle'
                 forklift.speed = 0.0
+                # Hydraulics simulation — idle
+                forklift.hydraulic_pressure = 0.0
+                forklift.pump_rpm = 0
+                forklift.oil_temp = round(max(20.0, forklift.oil_temp - 0.1), 1)
                 forklift.save()
                 logger.info(
                     "Task %s completed; forklift now idle at cell (%s, %s)",
