@@ -22,6 +22,13 @@ class Forklift(models.Model):
     cell_y = models.IntegerField(default=1)
     cell_z = models.IntegerField(default=0)
     speed = models.FloatField(default=1.0)  # tiles per second
+    hydraulic_pressure = models.FloatField(default=0.0)   # bar
+    oil_temp = models.FloatField(default=20.0)             # °C
+    fork_height = models.FloatField(default=0.0)           # metres
+    tilt = models.FloatField(default=0.0)                  # degrees
+    pump_rpm = models.IntegerField(default=0)              # RPM
+    valves_ok = models.BooleanField(default=True)
+    oil_level = models.FloatField(default=100.0)           # percent
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
