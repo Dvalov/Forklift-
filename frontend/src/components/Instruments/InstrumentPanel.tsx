@@ -38,16 +38,6 @@ const MOCK = {
     angle: 45,
   },
 
-  hydraulics: {
-    pressure: 146,
-    oilTemp: 54,
-    forkHeight: 1.5,
-    tilt: 0,
-    pumpRpm: 2800,
-    valvesOk: true,
-    oilLevel: 86,
-    status: 'Работает',
-  },
   sensors: {
     frontDist: 5.9,
     rearDist: 6.4,
@@ -131,7 +121,16 @@ export default function InstrumentPanel() {
 
         {/* Right: Hydraulics + Sensors + ETA */}
         <div className="flex flex-col gap-2">
-          <HydraulicsPanel {...MOCK.hydraulics} />
+          <HydraulicsPanel
+            pressure={forklift?.hydraulic_pressure ?? 0}
+            oilTemp={forklift?.oil_temp ?? 20}
+            forkHeight={forklift?.fork_height ?? 0}
+            tilt={forklift?.tilt ?? 0}
+            pumpRpm={forklift?.pump_rpm ?? 0}
+            valvesOk={forklift?.valves_ok ?? true}
+            oilLevel={forklift?.oil_level ?? 100}
+            status={forklift?.status === 'moving' ? 'Работает' : 'Стоит'}
+          />
           <SensorsPanel {...MOCK.sensors} />
           <div
             className="rounded-2xl p-2"
