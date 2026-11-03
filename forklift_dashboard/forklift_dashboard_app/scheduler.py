@@ -35,7 +35,7 @@ def start_scheduler():
 
 def simulation_tick():
     try:
-        from .models import Forklift, Task
+        from .models import Forklift
 
         forklift_id = getattr(settings, 'FORKLIFT_ID', None)
         warehouse_id = getattr(settings, 'WAREHOUSE_ID', None)
@@ -50,96 +50,176 @@ def simulation_tick():
             logger.error("Forklift pk=%s not found in DB", forklift_id)
             return
 
-        in_progress = Task.objects.filter(forklift=forklift, status='in_progress').first()
-
-        if not in_progress:
-            pending = Task.objects.filter(forklift=forklift, status='pending').first()
-            if pending:
-                path = _fetch_path(
-                    forklift_id=forklift_id, warehouse_id=warehouse_id,
-                    from_x=forklift.cell_x, from_y=forklift.cell_y, from_z=forklift.cell_z,
-                    dest_x=2 * pending.dest_cell_x - 1, dest_y=pending.dest_cell_y, dest_z=pending.dest_cell_z,
-                )
-                if path is None:
-                    logger.error(
-                        "Could not fetch path for task %s (%s,%s,%s)->(%s,%s,%s)",
-                        pending.pk,
-                        forklift.cell_x, forklift.cell_y, forklift.cell_z,
-                        pending.dest_cell_x, pending.dest_cell_y, pending.dest_cell_z,
-                    )
-                    return
-
-                if path == []:
-                    pending.status = 'completed'
-                    pending.path_waypoints = []
-                    pending.save()
-                    forklift.status = 'idle'
-                    forklift.speed = 0.0
-                    forklift.save()
-                    logger.info("Task %s completed immediately (forklift already at destination)", pending.pk)
-                    return
-
-                pending.path_waypoints = path
-                pending.status = 'in_progress'
-                pending.save()
-                forklift.status = 'moving'
-                forklift.speed = 1.0
-                forklift.save()
-                in_progress = pending
-                logger.info("Task %s picked up; path has %d waypoints", pending.pk, len(path))
-
-        if in_progress and in_progress.path_waypoints:
-            from django.utils import timezone
-            from datetime import timedelta
-            if (in_progress.frontend_advanced_at and
-                    timezone.now() - in_progress.frontend_advanced_at < timedelta(seconds=2)):
-                logger.debug("Task %s: frontend driving, skipping backend tick", in_progress.pk)
-                return
-
-            waypoints = list(in_progress.path_waypoints)
-            next_wp = waypoints.pop(0)
-
-            forklift.cell_x = round(next_wp['x'])
-            forklift.cell_y = round(next_wp.get('y', forklift.cell_y))
-            forklift.cell_z = round(next_wp['z'])
-     
-            forklift.charge_level = max(0.0, forklift.charge_level - DISCHARGE_RATE)
-
-            # Hydraulics simulation — active movement
-            forklift.hydraulic_pressure = round(random.uniform(142.0, 158.0), 1)
-            forklift.oil_temp = round(min(80.0, forklift.oil_temp + 0.2), 1)
-            forklift.pump_rpm = random.randint(2750, 2900)
-            forklift.valves_ok = True
-            forklift.oil_level = round(max(0.0, forklift.oil_level - 0.01), 2)
-
-            real = _fetch_real_coords(warehouse_id, forklift.cell_x, forklift.cell_y, forklift.cell_z)
-            if real:
-                forklift.position_x = real['x']
-                forklift.position_y = real['y']
-                forklift.position_z = real['z']
-
-            forklift.save()
-
-            in_progress.path_waypoints = waypoints
-            if not waypoints:
-                in_progress.status = 'completed'
-                in_progress.save()
-                forklift.status = 'idle'
-                forklift.speed = 0.0
-                # Hydraulics simulation — idle
-                forklift.hydraulic_pressure = 0.0
-                forklift.pump_rpm = 0
-                forklift.oil_temp = round(max(20.0, forklift.oil_temp - 0.1), 1)
-                forklift.save()
-                logger.info(
-                    "Task %s completed; forklift now idle at cell (%s, %s)",
-                    in_progress.pk, forklift.cell_x, forklift.cell_z,
-                )
-            else:
-                in_progress.save()
+        anylogic_state = _fetch_anylogic_state()
+        if anylogic_state is not None:
+            _tick_anylogic_mode(forklift, anylogic_state)
+        else:
+            _tick_django_mode(forklift, forklift_id, warehouse_id)
 
     except Exception:
         logger.exception("Unhandled error in simulation_tick")
+
+
+# ---------------------------------------------------------------------------
+# AnyLogic mode — AnyLogic owns movement; Django only syncs status/hydraulics
+# ---------------------------------------------------------------------------
+
+def _tick_anylogic_mode(forklift, anylogic_state):
+    from .models import Task
+
+    forklifts = anylogic_state.get('forklifts', [])
+    al_fl = forklifts[0] if forklifts else None
+    al_busy = bool(al_fl and al_fl.get('busy', False))
+
+    in_progress = Task.objects.filter(forklift=forklift, status='in_progress').first()
+
+    if al_busy:
+        # Pick up pending task the first time AnyLogic reports busy
+        if not in_progress:
+            pending = Task.objects.filter(forklift=forklift, status='pending').first()
+            if pending:
+                pending.status = 'in_progress'
+                pending.path_waypoints = []
+                pending.save()
+                in_progress = pending
+                logger.info("Task %s started (AnyLogic mode)", pending.pk)
+
+        forklift.status = 'moving'
+        forklift.speed = 1.0
+        forklift.charge_level = max(0.0, forklift.charge_level - DISCHARGE_RATE)
+        forklift.hydraulic_pressure = round(random.uniform(142.0, 158.0), 1)
+        forklift.oil_temp = round(min(80.0, forklift.oil_temp + 0.2), 1)
+        forklift.pump_rpm = random.randint(2750, 2900)
+        forklift.valves_ok = True
+        forklift.oil_level = round(max(0.0, forklift.oil_level - 0.01), 2)
+        forklift.save()
+
+    else:
+        # AnyLogic finished — complete task and go idle
+        if in_progress:
+            in_progress.status = 'completed'
+            in_progress.save()
+            logger.info("Task %s completed (AnyLogic mode)", in_progress.pk)
+
+        if forklift.status != 'idle':
+            forklift.status = 'idle'
+            forklift.speed = 0.0
+            forklift.hydraulic_pressure = 0.0
+            forklift.pump_rpm = 0
+            forklift.oil_temp = round(max(20.0, forklift.oil_temp - 0.1), 1)
+            forklift.save()
+
+
+# ---------------------------------------------------------------------------
+# Django mode — full A* simulation when AnyLogic is unavailable
+# ---------------------------------------------------------------------------
+
+def _tick_django_mode(forklift, forklift_id, warehouse_id):
+    from .models import Task
+
+    in_progress = Task.objects.filter(forklift=forklift, status='in_progress').first()
+
+    if not in_progress:
+        pending = Task.objects.filter(forklift=forklift, status='pending').first()
+        if pending:
+            path = _fetch_path(
+                forklift_id=forklift_id, warehouse_id=warehouse_id,
+                from_x=forklift.cell_x, from_y=forklift.cell_y, from_z=forklift.cell_z,
+                dest_x=2 * pending.dest_cell_x - 1, dest_y=pending.dest_cell_y, dest_z=pending.dest_cell_z,
+            )
+            if path is None:
+                logger.error(
+                    "Could not fetch path for task %s (%s,%s,%s)->(%s,%s,%s)",
+                    pending.pk,
+                    forklift.cell_x, forklift.cell_y, forklift.cell_z,
+                    pending.dest_cell_x, pending.dest_cell_y, pending.dest_cell_z,
+                )
+                return
+
+            if path == []:
+                pending.status = 'completed'
+                pending.path_waypoints = []
+                pending.save()
+                forklift.status = 'idle'
+                forklift.speed = 0.0
+                forklift.save()
+                logger.info("Task %s completed immediately (forklift already at destination)", pending.pk)
+                return
+
+            pending.path_waypoints = path
+            pending.status = 'in_progress'
+            pending.save()
+            forklift.status = 'moving'
+            forklift.speed = 1.0
+            forklift.save()
+            in_progress = pending
+            logger.info("Task %s picked up; path has %d waypoints", pending.pk, len(path))
+
+    if in_progress and in_progress.path_waypoints:
+        from django.utils import timezone
+        from datetime import timedelta
+        if (in_progress.frontend_advanced_at and
+                timezone.now() - in_progress.frontend_advanced_at < timedelta(seconds=2)):
+            logger.debug("Task %s: frontend driving, skipping backend tick", in_progress.pk)
+            return
+
+        waypoints = list(in_progress.path_waypoints)
+        next_wp = waypoints.pop(0)
+
+        forklift.cell_x = round(next_wp['x'])
+        forklift.cell_y = round(next_wp.get('y', forklift.cell_y))
+        forklift.cell_z = round(next_wp['z'])
+
+        forklift.charge_level = max(0.0, forklift.charge_level - DISCHARGE_RATE)
+        forklift.hydraulic_pressure = round(random.uniform(142.0, 158.0), 1)
+        forklift.oil_temp = round(min(80.0, forklift.oil_temp + 0.2), 1)
+        forklift.pump_rpm = random.randint(2750, 2900)
+        forklift.valves_ok = True
+        forklift.oil_level = round(max(0.0, forklift.oil_level - 0.01), 2)
+
+        real = _fetch_real_coords(warehouse_id, forklift.cell_x, forklift.cell_y, forklift.cell_z)
+        if real:
+            forklift.position_x = real['x']
+            forklift.position_y = real['y']
+            forklift.position_z = real['z']
+
+        forklift.save()
+
+        in_progress.path_waypoints = waypoints
+        if not waypoints:
+            in_progress.status = 'completed'
+            in_progress.save()
+            forklift.status = 'idle'
+            forklift.speed = 0.0
+            forklift.hydraulic_pressure = 0.0
+            forklift.pump_rpm = 0
+            forklift.oil_temp = round(max(20.0, forklift.oil_temp - 0.1), 1)
+            forklift.save()
+            logger.info(
+                "Task %s completed; forklift now idle at cell (%s, %s)",
+                in_progress.pk, forklift.cell_x, forklift.cell_z,
+            )
+        else:
+            in_progress.save()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _fetch_anylogic_state():
+    """Return AnyLogic /state JSON via Warehouse proxy, or None if unavailable."""
+    try:
+        resp = http_requests.get(
+            "http://localhost:8001/api/anylogic/state",
+            timeout=0.5,
+            proxies={'http': None, 'https': None},
+        )
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        pass
+    return None
 
 
 def _fetch_real_coords(warehouse_id, cell_x, cell_y, cell_z):
@@ -159,7 +239,7 @@ def _fetch_real_coords(warehouse_id, cell_x, cell_y, cell_z):
 
 
 def _fetch_path(forklift_id, warehouse_id, from_x, from_y, from_z, dest_x, dest_y, dest_z):
-    """Call Converter get_cell_path and return list of {"x", "y", "z"} waypoints, or None on error."""
+    """Call Converter get_cell_path and return list of {"x", "z"} waypoints, or None on error."""
     try:
         url = f"http://localhost:8002/api/converter/{warehouse_id}/cells/get_path/"
         resp = http_requests.get(url, params={
