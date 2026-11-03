@@ -5,14 +5,14 @@ from .models import Forklift, Task
 class ForkliftSerializer(serializers.ModelSerializer):
     class Meta:
         model = Forklift
-        fields = ['id', 'name', 'charge_level', 'status', 'position_x', 'position_y', 'position_z', 'cell_x', 'cell_y', 'cell_z', 'speed', 'updated_at']
+        fields = ['id', 'name', 'charge_level', 'status', 'position_x', 'position_y', 'position_z', 'cell_x', 'cell_y', 'cell_z', 'speed', 'hydraulic_pressure', 'oil_temp', 'fork_height', 'tilt', 'pump_rpm', 'valves_ok', 'oil_level', 'updated_at']
         read_only_fields = ['id', 'updated_at']
 
 
 class ForkliftUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Forklift
-        fields = ['id', 'name', 'charge_level', 'status', 'position_x', 'position_y', 'position_z', 'cell_x', 'cell_y', 'cell_z', 'updated_at']
+        fields = ['id', 'name', 'charge_level', 'status', 'position_x', 'position_y', 'position_z', 'cell_x', 'cell_y', 'cell_z', 'hydraulic_pressure', 'oil_temp', 'fork_height', 'tilt', 'pump_rpm', 'valves_ok', 'oil_level', 'updated_at']
         read_only_fields = ['id', 'updated_at']
 
 
