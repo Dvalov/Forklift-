@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import TopStatusBar from './TopStatusBar'
 import BottomStatusBar from './BottomStatusBar'
 import HydraulicsPanel from './HydraulicsPanel'
@@ -7,6 +8,7 @@ import SpeedometerGauge from './SpeedometerGauge'
 import WarehouseMap from './WarehouseMap'
 import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
 import StatusBadge from '@/components/ForkliftStatus/StatusBadge'
+import { useAnyLogicStream } from './useAnyLogicStream'
 import type { Forklift } from '@/types/api'
 
 function deriveDirection(status: Forklift['status'] | undefined): 'forward' | 'backward' | 'stop' {
@@ -65,6 +67,31 @@ const MOCK = {
 
 export default function InstrumentPanel() {
   const { data: forklift } = useForkliftQuery()
+  const anylogicData = useAnyLogicStream()
+
+  const isAnyLogicBusy = anylogicData?.forklifts?.[0]?.busy ?? false
+  const djangoIsActive = (forklift?.hydraulic_pressure ?? 0) > 0
+  const useSimHyd = isAnyLogicBusy && !djangoIsActive
+
+  const [simHyd, setSimHyd] = useState({ pressure: 0, oilTemp: 20, pumpRpm: 0, oilLevel: 100 })
+
+  useEffect(() => {
+    if (!useSimHyd) {
+      setSimHyd({ pressure: 0, oilTemp: 20, pumpRpm: 0, oilLevel: 100 })
+      return
+    }
+    const tick = () => setSimHyd(prev => ({
+      pressure: Math.round((142 + Math.random() * 16) * 10) / 10,
+      oilTemp: Math.round(Math.min(80, prev.oilTemp + 0.2) * 10) / 10,
+      pumpRpm: 2750 + Math.floor(Math.random() * 150),
+      oilLevel: Math.round(Math.max(0, prev.oilLevel - 0.01) * 100) / 100,
+    }))
+    tick()
+    const id = setInterval(tick, 3000)
+    return () => clearInterval(id)
+  }, [useSimHyd])
+
+  const isForkliftActive = forklift?.status === 'moving' || isAnyLogicBusy
 
   return (
     <div
@@ -117,19 +144,20 @@ export default function InstrumentPanel() {
           targetLabel={MOCK.map.targetLabel}
           obstacle={MOCK.map.obstacle}
           angle={MOCK.map.angle}
+          anylogicData={anylogicData}
         />
 
         {/* Right: Hydraulics + Sensors + ETA */}
         <div className="flex flex-col gap-2">
           <HydraulicsPanel
-            pressure={forklift?.hydraulic_pressure ?? 0}
-            oilTemp={forklift?.oil_temp ?? 20}
+            pressure={useSimHyd ? simHyd.pressure : (forklift?.hydraulic_pressure ?? 0)}
+            oilTemp={useSimHyd ? simHyd.oilTemp : (forklift?.oil_temp ?? 20)}
             forkHeight={forklift?.fork_height ?? 0}
             tilt={forklift?.tilt ?? 0}
-            pumpRpm={forklift?.pump_rpm ?? 0}
+            pumpRpm={useSimHyd ? simHyd.pumpRpm : (forklift?.pump_rpm ?? 0)}
             valvesOk={forklift?.valves_ok ?? true}
-            oilLevel={forklift?.oil_level ?? 100}
-            status={forklift?.status === 'moving' ? 'Работает' : 'Стоит'}
+            oilLevel={useSimHyd ? simHyd.oilLevel : (forklift?.oil_level ?? 100)}
+            status={isForkliftActive ? 'Работает' : 'Стоит'}
           />
           <SensorsPanel {...MOCK.sensors} />
           <div

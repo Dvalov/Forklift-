@@ -3,7 +3,7 @@ import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
 import { useTasksQuery } from '@/components/TaskList/useTasksQuery'
 import { useAllCellsQuery } from './useAllCellsQuery'
 import { useWaypointDriver } from './useWaypointDriver'
-import { useAnyLogicStream } from './useAnyLogicStream'
+import type { AnyLogicState } from '@/types/api'
 
 interface WarehouseMapProps {
   forkliftCell: { x: number; y: number }
@@ -15,6 +15,7 @@ interface WarehouseMapProps {
   targetLabel?: string
   obstacle?: string | null
   angle?: number
+  anylogicData?: AnyLogicState | null
 }
 
 const CELL_SIZE = 20
@@ -38,11 +39,11 @@ export default function WarehouseMap({
   targetLabel: fallbackTargetLabel,
   obstacle,
   angle,
+  anylogicData = null,
 }: WarehouseMapProps) {
   const { data } = useForkliftQuery()
   const { data: tasks } = useTasksQuery()
   const allCells = useAllCellsQuery()
-  const anylogicData = useAnyLogicStream()
 
   // Phase: source → dest → done (AnyLogic proximity-driven)
   const arrivedAtSourceRef = useRef(false)
