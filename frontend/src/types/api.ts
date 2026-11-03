@@ -10,6 +10,13 @@ export interface Forklift {
   cell_y: number
   cell_z: number
   speed: number // tiles per second; 0.0 when idle, 1.0 when moving
+  hydraulic_pressure: number   // бар
+  oil_temp: number             // °C
+  fork_height: number          // м
+  tilt: number                 // °
+  pump_rpm: number             // об/мин
+  valves_ok: boolean
+  oil_level: number            // %
   updated_at: string
 }
 
