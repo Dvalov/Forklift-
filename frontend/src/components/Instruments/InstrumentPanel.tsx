@@ -7,6 +7,7 @@ import BatteryPanel from './BatteryPanel'
 import SpeedometerGauge from './SpeedometerGauge'
 import WarehouseMap from './WarehouseMap'
 import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
+import { useTasksQuery } from '@/components/TaskList/useTasksQuery'
 import StatusBadge from '@/components/ForkliftStatus/StatusBadge'
 import { useAnyLogicStream } from './useAnyLogicStream'
 import type { Forklift } from '@/types/api'
@@ -67,6 +68,8 @@ const MOCK = {
 
 export default function InstrumentPanel() {
   const { data: forklift } = useForkliftQuery()
+  const { data: tasks } = useTasksQuery()
+  const activeTask = tasks?.find(t => t.status === 'in_progress' || t.status === 'pending') ?? null
   const anylogicData = useAnyLogicStream()
 
   const isAnyLogicBusy = anylogicData?.forklifts?.[0]?.busy ?? false
@@ -102,7 +105,7 @@ export default function InstrumentPanel() {
         mode={MOCK.mode}
         signal={MOCK.signal}
         connected={MOCK.connected}
-        taskNumber={MOCK.taskNumber}
+        taskNumber={activeTask ? `#${activeTask.id}` : null}
         errorCount={MOCK.errorCount}
         cargoWeight={MOCK.cargoWeight}
       />
@@ -159,7 +162,14 @@ export default function InstrumentPanel() {
             oilLevel={useSimHyd ? simHyd.oilLevel : (forklift?.oil_level ?? 100)}
             status={isForkliftActive ? 'Работает' : 'Стоит'}
           />
-          <SensorsPanel {...MOCK.sensors} />
+          <SensorsPanel
+            motorTemp={forklift?.oil_temp ?? 20}
+            controllerTemp={Math.max(20, (forklift?.oil_temp ?? 20) - 8)}
+            steeringAngle={forklift?.tilt ?? 0}
+            forkLoad={forklift && forklift.fork_height > 0 ? 850 : 0}
+            frontDist={forklift?.status === 'moving' ? MOCK.sensors.frontDist : 9.9}
+            rearDist={forklift?.status === 'moving' ? MOCK.sensors.rearDist : 9.9}
+          />
           <div
             className="rounded-2xl p-2"
             style={{

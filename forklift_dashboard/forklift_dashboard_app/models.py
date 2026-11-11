@@ -9,6 +9,7 @@ class Forklift(models.Model):
         ('loading', 'Loading'),
         ('error', 'Error'),
         ('stopped', 'Stopped'),
+        ('charging', 'Charging'),
     ]
 
     id=models.AutoField(primary_key=True)

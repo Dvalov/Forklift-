@@ -2,7 +2,7 @@ export interface Forklift {
   id: number
   name: string
   charge_level: number
-  status: 'idle' | 'moving' | 'loading' | 'error' | 'stopped'
+  status: 'idle' | 'moving' | 'loading' | 'error' | 'stopped' | 'charging'
   position_x: number
   position_y: number
   position_z: number

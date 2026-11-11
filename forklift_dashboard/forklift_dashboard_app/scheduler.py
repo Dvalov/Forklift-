@@ -1,5 +1,6 @@
 import atexit
 import logging
+import os
 import random
 
 import requests as http_requests
@@ -22,7 +23,7 @@ def start_scheduler():
     _scheduler.add_job(
         simulation_tick,
         trigger='interval',
-        seconds=1,
+        seconds=0.5,
         id='forklift_simulation',
         replace_existing=True,
         max_instances=1,
@@ -64,17 +65,35 @@ def simulation_tick():
 # AnyLogic mode — AnyLogic owns movement; Django only syncs status/hydraulics
 # ---------------------------------------------------------------------------
 
+_AL_IDLE_STATES = {'Idle', 'Complete', 'Charging'}
+
+_AL_STATE_TO_DJANGO: dict[str, str] = {
+    'Idle':         'idle',
+    'GoToSource':   'moving',
+    'PickUp':       'moving',
+    'GoToDest':     'moving',
+    'PutDown':      'moving',
+    'Complete':     'idle',
+    'Charging':     'charging',
+    'GoToCharger':  'moving',
+    'ReturnToBase': 'moving',
+}
+
+
 def _tick_anylogic_mode(forklift, anylogic_state):
     from .models import Task
 
     forklifts = anylogic_state.get('forklifts', [])
     al_fl = forklifts[0] if forklifts else None
-    al_busy = bool(al_fl and al_fl.get('busy', False))
+    al_state = al_fl.get('state', 'Idle') if al_fl else 'Idle'
+    al_active = al_state not in _AL_IDLE_STATES
+    django_status = _AL_STATE_TO_DJANGO.get(al_state, 'idle')
 
     in_progress = Task.objects.filter(forklift=forklift, status='in_progress').first()
 
-    if al_busy:
-        # Pick up pending task the first time AnyLogic reports busy
+    if al_active:
+        _last_dispatched_task_id = None  # reset so next idle triggers dispatch
+        # Pick up pending task the first time AnyLogic becomes active
         if not in_progress:
             pending = Task.objects.filter(forklift=forklift, status='pending').first()
             if pending:
@@ -82,11 +101,12 @@ def _tick_anylogic_mode(forklift, anylogic_state):
                 pending.path_waypoints = []
                 pending.save()
                 in_progress = pending
-                logger.info("Task %s started (AnyLogic mode)", pending.pk)
+                logger.info("Task %s started (AnyLogic mode, state=%s)", pending.pk, al_state)
 
-        forklift.status = 'moving'
+        forklift.status = django_status
         forklift.speed = 1.0
-        forklift.charge_level = max(0.0, forklift.charge_level - DISCHARGE_RATE)
+        forklift.charge_level = al_fl.get('charge', forklift.charge_level)
+        forklift.fork_height = 1.0 if al_state in ('PickUp', 'PutDown') else 0.0
         forklift.hydraulic_pressure = round(random.uniform(142.0, 158.0), 1)
         forklift.oil_temp = round(min(80.0, forklift.oil_temp + 0.2), 1)
         forklift.pump_rpm = random.randint(2750, 2900)
@@ -95,14 +115,19 @@ def _tick_anylogic_mode(forklift, anylogic_state):
         forklift.save()
 
     else:
-        # AnyLogic finished — complete task and go idle
+        # AnyLogic not active — complete task and apply mapped status (idle or charging)
         if in_progress:
             in_progress.status = 'completed'
             in_progress.save()
-            logger.info("Task %s completed (AnyLogic mode)", in_progress.pk)
+            logger.info("Task %s completed (AnyLogic mode, state=%s)", in_progress.pk, al_state)
 
-        if forklift.status != 'idle':
-            forklift.status = 'idle'
+        if al_state == 'Idle':
+            _dispatch_next_task(anylogic_state, forklift)
+
+        new_charge = al_fl.get('charge', forklift.charge_level) if al_fl else forklift.charge_level
+        if forklift.status != django_status or forklift.charge_level != new_charge:
+            forklift.status = django_status
+            forklift.charge_level = new_charge
             forklift.speed = 0.0
             forklift.hydraulic_pressure = 0.0
             forklift.pump_rpm = 0
@@ -207,12 +232,57 @@ def _tick_django_mode(forklift, forklift_id, warehouse_id):
 # Helpers
 # ---------------------------------------------------------------------------
 
+_last_dispatched_task_id: int | None = None
+
+
+def _dispatch_next_task(anylogic_state, forklift):
+    """Send the next pending task to AnyLogic /order if one exists and not yet dispatched."""
+    global _last_dispatched_task_id
+    from .models import Task
+    next_task = Task.objects.filter(forklift=forklift, status='pending').first()
+    if not next_task or next_task.pk == _last_dispatched_task_id:
+        return
+    if not next_task:
+        return
+
+    al_cells = anylogic_state.get('cells', [])
+    al_source = next(
+        (c for c in al_cells if c.get('name') == next_task.source_cell_name), None
+    )
+    al_dest = next(
+        (c for c in al_cells if c.get('name') == next_task.dest_cell_name), None
+    )
+    if al_source is None or al_dest is None:
+        logger.warning(
+            "Next task %s: AnyLogic cell not found (source=%s, dest=%s)",
+            next_task.pk, next_task.source_cell_name, next_task.dest_cell_name,
+        )
+        return
+
+    try:
+        anylogic_url = os.environ.get('ANYLOGIC_URL', 'http://127.0.0.1:8080')
+        resp = http_requests.post(
+            f'{anylogic_url}/order',
+            json={'sourceCellId': al_source['id'], 'destCellId': al_dest['id']},
+            timeout=0.5,
+            proxies={'http': None, 'https': None},
+        )
+        _last_dispatched_task_id = next_task.pk
+        logger.info(
+            "Dispatched task %s to AnyLogic (source=%s→%s, dest=%s→%s), status=%s",
+            next_task.pk, next_task.source_cell_name, al_source['id'],
+            next_task.dest_cell_name, al_dest['id'], resp.status_code,
+        )
+    except Exception as exc:
+        logger.warning("Failed to dispatch task %s to AnyLogic: %s", next_task.pk, exc)
+
+
 def _fetch_anylogic_state():
     """Return AnyLogic /state JSON via Warehouse proxy, or None if unavailable."""
     try:
         resp = http_requests.get(
             "http://localhost:8001/api/anylogic/state",
-            timeout=0.5,
+            timeout=0.3,
             proxies={'http': None, 'https': None},
         )
         if resp.status_code == 200:
@@ -252,5 +322,5 @@ def _fetch_path(forklift_id, warehouse_id, from_x, from_y, from_z, dest_x, dest_
         data = resp.json()
         return data.get('path', [])
     except Exception:
-        logger.exception("Failed to fetch path from Converter at %s", url)
+        logger.warning("Converter unavailable, path fetch skipped")
         return None
