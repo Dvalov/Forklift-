@@ -242,8 +242,6 @@ def _dispatch_next_task(anylogic_state, forklift):
     next_task = Task.objects.filter(forklift=forklift, status='pending').first()
     if not next_task or next_task.pk == _last_dispatched_task_id:
         return
-    if not next_task:
-        return
 
     al_cells = anylogic_state.get('cells', [])
     al_source = next(
