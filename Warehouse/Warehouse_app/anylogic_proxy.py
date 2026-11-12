@@ -10,14 +10,13 @@ def anylogic_state(request):
     """GET /api/anylogic/state — proxy to AnyLogic /state endpoint."""
     anylogic_url = os.environ.get('ANYLOGIC_URL', 'http://127.0.0.1:8080')
     try:
-        resp = requests.get(f'{anylogic_url}/state', timeout=5)
+        resp = requests.get(f'{anylogic_url}/state', timeout=0.4)
         try:
             return JsonResponse(resp.json(), status=resp.status_code)
         except ValueError as e:
             return JsonResponse({'error': 'invalid_json', 'detail': str(e), 'raw': resp.text[:500]}, status=502)
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return JsonResponse({'error': 'anylogic_unavailable', 'detail': str(e)}, status=503)
+    except Exception:
+        return JsonResponse({'error': 'anylogic_unavailable'}, status=503)
 
 
 def anylogic_stream(request):
@@ -52,9 +51,8 @@ def anylogic_order(request):
             f'{anylogic_url}/order',
             data=request.body,
             headers={'Content-Type': 'application/json'},
-            timeout=5,
+            timeout=0.4,
         )
         return JsonResponse(resp.json(), status=resp.status_code)
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return JsonResponse({'error': 'anylogic_unavailable', 'detail': str(e)}, status=503)
+    except Exception:
+        return JsonResponse({'error': 'anylogic_unavailable'}, status=503)

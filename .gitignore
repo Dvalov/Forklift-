@@ -325,4 +325,4 @@ log_8000.txt
 /node_modules
 *.png
 CLAUDE.md
-/forklift_dashboard/forklift_dashboard_app/migrations/
+/.planning/
