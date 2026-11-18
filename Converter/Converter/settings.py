@@ -25,13 +25,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
-print(f"DEBUG: SECRET_KEY = {SECRET_KEY}")
-
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [h.strip()
+        for h in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,converter").split(",")
+        if h.strip()]
 
 
 # Application definition
@@ -128,9 +128,14 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    o.strip()
+        for o in os.getenv(
+            "CORS_ALLOWED_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://localhost",
+        ).split(",")
+        if o.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True

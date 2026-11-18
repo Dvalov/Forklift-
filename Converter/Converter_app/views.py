@@ -176,8 +176,9 @@ def get_cell_path(request, warehouse_id):
         # Все ячейки склада — шкафы, т.е. препятствия для погрузчика.
         # Запрашиваем без фильтра available: занятость полки не влияет на проходимость.
         try:
+            warehouse_url = os.environ.get('WAREHOUSE_URL', 'http://localhost:8001')
             resp = http_requests.get(
-                f"http://localhost:8001/api/warehouse/{warehouse_id}/cells/",
+                f"{warehouse_url}/api/warehouse/{warehouse_id}/cells/",
                 timeout=2,
                 proxies={"http": None, "https": None},
             )

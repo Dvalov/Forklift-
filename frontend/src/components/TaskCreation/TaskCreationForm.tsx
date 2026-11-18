@@ -6,8 +6,6 @@ import { convertCellToCoords } from '@/api/converter'
 import { FORKLIFT_ID } from '@/config'
 import type { Cell, Coordinates } from '@/types/api'
 import CellNameInput from './CellNameInput'
-import { postAnyLogicOrder } from '@/api/anylogic'
-import { useAnyLogicQuery } from '@/components/Instruments/useAnyLogicQuery'
 import { useAllCellsQuery } from '@/components/Instruments/useAllCellsQuery'
 import Toast from '@/components/ui/Toast'
 
@@ -15,7 +13,6 @@ export default function TaskCreationForm() {
   const availableCellsRaw: Cell[] = useAvailableCells()
   const { data: tasks } = useTasksQuery()
   const createTaskMutation = useCreateTask()
-  const anylogicState = useAnyLogicQuery()
   const allCells: Cell[] = useAllCellsQuery()
   const [toastVisible, setToastVisible] = useState(false)
 
@@ -102,19 +99,6 @@ export default function TaskCreationForm() {
 
   useEffect(() => {
     if (createTaskMutation.isSuccess) {
-      if (sourceCell !== null && selectedCell !== null && anylogicState != null && (anylogicState.cells?.length ?? 0) > 0) {
-        const alSource = anylogicState.cells.find(c =>
-          (sourceCell.name && c.name === sourceCell.name) || (c.col === sourceCell.x && c.row === sourceCell.z)
-        )
-        const alDest = anylogicState.cells.find(c =>
-          (selectedCell.name && c.name === selectedCell.name) || (c.col === selectedCell.x && c.row === selectedCell.z)
-        )
-        if (alSource !== undefined && alDest !== undefined) {
-          void postAnyLogicOrder(alSource.id, alDest.id)
-        } else {
-          console.warn('[AnyLogic] cell lookup failed', { source: sourceCell, dest: selectedCell })
-        }
-      }
       setToastVisible(true)
       setSourceQuery('')
       setSourceCell(null)
@@ -127,7 +111,7 @@ export default function TaskCreationForm() {
       setConverterError(null)
       createTaskMutation.reset()
     }
-  }, [createTaskMutation.isSuccess, createTaskMutation, sourceCell, selectedCell, anylogicState])
+  }, [createTaskMutation.isSuccess, createTaskMutation])
 
   function handleRetry() {
     if (selectedCell) runConverter(selectedCell)

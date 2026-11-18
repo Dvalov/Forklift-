@@ -1,0 +1,11 @@
+deploy_converter:
+  extends: .deploy_template
+  stage: deploy
+  script:
+    - echo "Deploying Converter..."
+    - 
+  environment:
+    name: converter
+    url: http://converter.example.com
+  only:
+    - main

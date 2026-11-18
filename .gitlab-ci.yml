@@ -1,0 +1,31 @@
+# ==============================================================================
+# Корневой пайплайн CI/CD (GitLab -> In-Cluster Vault -> Kubernetes)
+# ==============================================================================
+
+workflow:
+  # Автоматическая отмена предыдущих незавершённых пайплайнов при новом коммите
+  auto_cancel:
+    on_new_commit: interruptible
+  rules:
+    # Запуск для Merge Requests
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # Исключение дублирования пайплайнов для веток с открытым MR
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    # Запуск для коммитов в ветки (main, dev, feature/*)
+    - if: $CI_COMMIT_BRANCH
+    # Запуск для релизных тегов (v1.0.0 и т.п.)
+    - if: $CI_COMMIT_TAG
+
+# По умолчанию разрешаем прерывать все джобы старого пайплайна
+default:
+  interruptible: true
+
+include:
+  - local: .gitlab/ci/deploy_forklift_dashboard.yml
+  - local: .gitlab/ci/deploy_warehouse.yml
+  - local: .gitlab/ci/deploy_converter.yml
+  - local: .gitlab/ci/deploy_frontend.yml
+
+stages:
+  - deploy

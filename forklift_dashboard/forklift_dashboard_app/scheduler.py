@@ -65,6 +65,11 @@ def simulation_tick():
 # AnyLogic mode — AnyLogic owns movement; Django only syncs status/hydraulics
 # ---------------------------------------------------------------------------
 
+_AL_TASK_WORKING_STATES = {'GoToSource', 'PickUp', 'GoToDest', 'PutDown'}  # если одно из этих состояний, задача остается pending
+_AL_START_NEW_TASK_STATES = {'ReturnToBase', 'Idle', 'Complete'}  # если Complete, Idle или ReturnToBase — переводим in_progress в completed и пулим pending
+# в каком бы состоянии ни был погрузчик, задача всегда добавляется в статусе pending
+_AL_SERVICE_MOVING_STATES = {'GoToCharger'}
+_AL_MOVING_STATES = _AL_TASK_WORKING_STATES | _AL_SERVICE_MOVING_STATES | {'ReturnToBase'}
 _AL_IDLE_STATES = {'Idle', 'Complete', 'Charging'}
 
 _AL_STATE_TO_DJANGO: dict[str, str] = {
@@ -79,33 +84,50 @@ _AL_STATE_TO_DJANGO: dict[str, str] = {
     'ReturnToBase': 'moving',
 }
 
+_last_dispatched_task_id: int | None = None
+
 
 def _tick_anylogic_mode(forklift, anylogic_state):
+    global _last_dispatched_task_id
     from .models import Task
 
     forklifts = anylogic_state.get('forklifts', [])
     al_fl = forklifts[0] if forklifts else None
     al_state = al_fl.get('state', 'Idle') if al_fl else 'Idle'
-    al_active = al_state not in _AL_IDLE_STATES
     django_status = _AL_STATE_TO_DJANGO.get(al_state, 'idle')
 
     in_progress = Task.objects.filter(forklift=forklift, status='in_progress').first()
 
-    if al_active:
-        _last_dispatched_task_id = None  # reset so next idle triggers dispatch
-        # Pick up pending task the first time AnyLogic becomes active
-        if not in_progress:
-            pending = Task.objects.filter(forklift=forklift, status='pending').first()
-            if pending:
-                pending.status = 'in_progress'
-                pending.path_waypoints = []
-                pending.save()
-                in_progress = pending
-                logger.info("Task %s started (AnyLogic mode, state=%s)", pending.pk, al_state)
+    # 1. Task Lifecycle Management
+    if al_state in _AL_TASK_WORKING_STATES:
+        # Forklift actively executing a task in AnyLogic; reset dispatched tracker
+        _last_dispatched_task_id = None
+        # Если одно из этих состояний, задача остается pending
 
+    elif al_state in _AL_START_NEW_TASK_STATES:
+        # Если статус Complete, Idle или ReturnToBase:
+        # Случай 1: есть текущая задача in_progress -> переводим в completed
+        if in_progress:
+            if in_progress.pk != _last_dispatched_task_id:
+                in_progress.status = 'completed'
+                in_progress.save()
+                logger.info("Task %s completed (AnyLogic mode, state=%s)", in_progress.pk, al_state)
+                in_progress = None
+                _last_dispatched_task_id = None
+            else:
+                # Задача только что отправлена в AnyLogic и ожидает перехода в рабочее состояние
+                return
+
+        # Случай 2: нету текущей задачи в статусе in_progress (или только что завершили)
+        # -> просто берем задачу pending и переводим ее в in_progress
+        _last_dispatched_task_id = None
+        _dispatch_next_task(anylogic_state, forklift)
+
+    # 2. Forklift Status & Telemetry Sync
+    if al_state in _AL_MOVING_STATES:
         forklift.status = django_status
         forklift.speed = 1.0
-        forklift.charge_level = al_fl.get('charge', forklift.charge_level)
+        forklift.charge_level = al_fl.get('charge', forklift.charge_level) if al_fl else forklift.charge_level
         forklift.fork_height = 1.0 if al_state in ('PickUp', 'PutDown') else 0.0
         forklift.hydraulic_pressure = round(random.uniform(142.0, 158.0), 1)
         forklift.oil_temp = round(min(80.0, forklift.oil_temp + 0.2), 1)
@@ -115,20 +137,15 @@ def _tick_anylogic_mode(forklift, anylogic_state):
         forklift.save()
 
     else:
-        # AnyLogic not active — complete task and apply mapped status (idle or charging)
-        if in_progress:
-            in_progress.status = 'completed'
-            in_progress.save()
-            logger.info("Task %s completed (AnyLogic mode, state=%s)", in_progress.pk, al_state)
-
-        if al_state == 'Idle':
-            _dispatch_next_task(anylogic_state, forklift)
-
         new_charge = al_fl.get('charge', forklift.charge_level) if al_fl else forklift.charge_level
-        if forklift.status != django_status or forklift.charge_level != new_charge:
+        if (forklift.status != django_status or
+                forklift.charge_level != new_charge or
+                forklift.speed != 0.0 or
+                forklift.fork_height != 0.0):
             forklift.status = django_status
             forklift.charge_level = new_charge
             forklift.speed = 0.0
+            forklift.fork_height = 0.0
             forklift.hydraulic_pressure = 0.0
             forklift.pump_rpm = 0
             forklift.oil_temp = round(max(20.0, forklift.oil_temp - 0.1), 1)
@@ -232,8 +249,6 @@ def _tick_django_mode(forklift, forklift_id, warehouse_id):
 # Helpers
 # ---------------------------------------------------------------------------
 
-_last_dispatched_task_id: int | None = None
-
 
 def _dispatch_next_task(anylogic_state, forklift):
     """Send the next pending task to AnyLogic /order if one exists and not yet dispatched."""
@@ -265,12 +280,22 @@ def _dispatch_next_task(anylogic_state, forklift):
             timeout=0.5,
             proxies={'http': None, 'https': None},
         )
-        _last_dispatched_task_id = next_task.pk
-        logger.info(
-            "Dispatched task %s to AnyLogic (source=%s→%s, dest=%s→%s), status=%s",
-            next_task.pk, next_task.source_cell_name, al_source['id'],
-            next_task.dest_cell_name, al_dest['id'], resp.status_code,
-        )
+        if resp.ok:
+            _last_dispatched_task_id = next_task.pk
+            next_task.status = 'in_progress'
+            next_task.path_waypoints = []
+            next_task.save()
+            logger.info(
+                "Dispatched task %s to AnyLogic (source=%s→%s, dest=%s→%s), status set to in_progress",
+                next_task.pk, next_task.source_cell_name, al_source['id'],
+                next_task.dest_cell_name, al_dest['id'],
+            )
+        else:
+            logger.warning(
+                "Failed to dispatch task %s to AnyLogic (source=%s→%s, dest=%s→%s), status=%s",
+                next_task.pk, next_task.source_cell_name, al_source['id'],
+                next_task.dest_cell_name, al_dest['id'], resp.status_code,
+            )
     except Exception as exc:
         logger.warning("Failed to dispatch task %s to AnyLogic: %s", next_task.pk, exc)
 
@@ -278,8 +303,9 @@ def _dispatch_next_task(anylogic_state, forklift):
 def _fetch_anylogic_state():
     """Return AnyLogic /state JSON via Warehouse proxy, or None if unavailable."""
     try:
+        warehouse_url = os.environ.get('WAREHOUSE_URL', 'http://localhost:8001')
         resp = http_requests.get(
-            "http://localhost:8001/api/anylogic/state",
+            f"{warehouse_url}/api/anylogic/state",
             timeout=0.3,
             proxies={'http': None, 'https': None},
         )
@@ -293,8 +319,9 @@ def _fetch_anylogic_state():
 def _fetch_real_coords(warehouse_id, cell_x, cell_y, cell_z):
     """Call Converter universal convert and return {"x", "y", "z"} in metres, or None on error."""
     try:
+        converter_url = os.environ.get('CONVERTER_URL', 'http://localhost:8002')
         resp = http_requests.get(
-            "http://localhost:8002/api/converter/convert/",
+            f"{converter_url}/api/converter/convert/",
             params={'x': cell_x, 'y': cell_y, 'z': cell_z},
             timeout=0.5, proxies={'http': None, 'https': None},
         )
@@ -309,7 +336,8 @@ def _fetch_real_coords(warehouse_id, cell_x, cell_y, cell_z):
 def _fetch_path(forklift_id, warehouse_id, from_x, from_y, from_z, dest_x, dest_y, dest_z):
     """Call Converter get_cell_path and return list of {"x", "z"} waypoints, or None on error."""
     try:
-        url = f"http://localhost:8002/api/converter/{warehouse_id}/cells/get_path/"
+        converter_url = os.environ.get('CONVERTER_URL', 'http://localhost:8002')
+        url = f"{converter_url}/api/converter/{warehouse_id}/cells/get_path/"
         resp = http_requests.get(url, params={
             'forklift_id': forklift_id,
             'warehouse_id': warehouse_id,
