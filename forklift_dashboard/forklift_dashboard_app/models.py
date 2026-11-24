@@ -1,5 +1,9 @@
+import logging
+
 from django.db import models
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 
 class Forklift(models.Model):
@@ -97,12 +101,14 @@ class Task(models.Model):
         if self.status == 'pending':
             self.status = 'cancelled'
             self.save()
+            logger.info("Task %s status: pending -> cancelled (forklift=%s)", self.pk, self.forklift_id)
             return True
 
     def restore(self):
         if self.status == 'cancelled':
             self.status = 'pending'
             self.save()
+            logger.info("Task %s status: cancelled -> pending (forklift=%s)", self.pk, self.forklift_id)
             return True
 
 

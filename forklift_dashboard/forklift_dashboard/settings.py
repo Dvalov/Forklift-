@@ -76,6 +76,30 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "forklift_dashboard.wsgi.application"
 
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "forklift": {
+            "format": "{asctime} {levelname} {name} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "forklift_console": {
+            "class": "logging.StreamHandler",
+            "formatter": "forklift",
+        },
+    },
+    "loggers": {
+        "forklift_dashboard_app": {
+            "handlers": ["forklift_console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
+
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases

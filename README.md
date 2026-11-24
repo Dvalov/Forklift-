@@ -63,16 +63,38 @@ frontend/             → :5173  — React UI (Vite dev server)
 ```bash
 cd forklift_dashboard          # или Warehouse / Converter
 pip install -r requirements.txt
+python manage.py makemigrations
 python manage.py migrate
 python manage.py runserver 8000  # 8001 / 8002
 ```
+
+Папки `migrations/` игнорируются Git. Docker генерирует миграции при сборке
+образов и применяет их при запуске контейнеров. Для обновления существующей базы
+храните историю миграций вне Git и восстанавливайте её локально из предыдущего
+релиза перед запуском `makemigrations` и сборкой образов.
+
+### Docker Compose
+
+Скопируйте [.env.example](.env.example) в `.env` в корне проекта или задайте
+переменные в окружении запуска. Обязательны `POSTGRES_PASSWORD`,
+`DASHBOARD_SECRET_KEY`, `WAREHOUSE_SECRET_KEY` и `CONVERTER_SECRET_KEY`.
+Для каждого Django-сервиса сгенерируйте отдельный ключ командой
+`python -c "from secrets import token_urlsafe; print(token_urlsafe(50))"`.
+Для интеграции с 1С укажите `ONEC_API_URL` в корневом `.env`, а при
+необходимости также `ONEC_API_USER` и `ONEC_API_PASSWORD`. Если 1С
+опубликована на той же машине, используйте в URL `host.docker.internal`
+вместо `localhost`.
+Запустите `docker compose up -d --build`.
+
+Для существующего тома PostgreSQL укажите действующий пароль роли. Изменение
+`POSTGRES_PASSWORD` в `.env` само по себе не меняет пароль уже созданной роли.
 
 ### Warehouse — переменные окружения
 
 Скопируйте `Warehouse/.env.example` → `Warehouse/.env` и заполните:
 
 ```env
-DJANGO_SECRET_KEY=your-secret-key
+DJANGO_SECRET_KEY=
 
 # Синхронизация ячеек из 1C (опционально)
 ONEC_API_URL=

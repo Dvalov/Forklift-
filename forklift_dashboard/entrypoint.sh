@@ -7,6 +7,10 @@ until [ "$n" -ge 10 ]
 do
     python manage.py migrate --noinput && break
     n=$((n+1))
+    if [ "$n" -eq 10 ]; then
+        echo "[forklift_dashboard] Migrations failed after $n attempts." >&2
+        exit 1
+    fi
     echo "[forklift_dashboard] Migration failed (attempt $n/10), retrying in 2s..."
     sleep 2
 done

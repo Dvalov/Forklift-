@@ -17,7 +17,10 @@ COPY . .
 
 RUN sed -i 's/\r$//' /app/entrypoint.sh && \
     chmod +x /app/entrypoint.sh && \
-    DJANGO_SECRET_KEY=build-placeholder python manage.py collectstatic --noinput && \
+    export DJANGO_SECRET_KEY="$(python -c 'from secrets import token_urlsafe; print(token_urlsafe(50))')" && \
+    DB_ENGINE=django.db.backends.sqlite3 DB_NAME=:memory: \
+        python manage.py makemigrations Converter_app --noinput && \
+    python manage.py collectstatic --noinput && \
     chown -R appuser:appuser /app
 
 USER appuser

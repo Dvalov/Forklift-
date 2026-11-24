@@ -1,3 +1,5 @@
+import logging
+
 from django.shortcuts import render
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -10,7 +12,7 @@ from .serializers import (
     TaskSerializer, TaskCreateSerializer, TaskUpdateSerializer
 )
 
-
+logger = logging.getLogger(__name__)
 
 class ForkliftViewSet(viewsets.ModelViewSet):
     queryset = Forklift.objects.all()
@@ -95,6 +97,8 @@ class ForkliftViewSet(viewsets.ModelViewSet):
             task.status = 'in_progress'
             task.forklift = forklift
             task.save()
+            logger.info("Task %s status: pending -> in_progress (forklift=%s api=execute)",
+                        task.pk, forklift.pk)
 
             # Отправляем погрузчик к точке
             forklift.status = 'moving'
@@ -168,6 +172,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             source_cell_name=data['source_cell_name'],
             dest_cell_name=data['dest_cell_name'],
         )
+        logger.info("Task %s queued: forklift=%s status=%s", task.pk, task.forklift_id, task.status)
 
         return Response(TaskSerializer(task).data, status=status.HTTP_201_CREATED)
 
@@ -264,6 +269,9 @@ class TaskViewSet(viewsets.ModelViewSet):
             forklift.speed = 0.0
             forklift.save()
         task.save()
+        if not waypoints:
+            logger.info("Task %s status: in_progress -> completed (forklift=%s api=advance)",
+                        task.pk, task.forklift_id)
 
         return Response(TaskSerializer(task).data)
 
