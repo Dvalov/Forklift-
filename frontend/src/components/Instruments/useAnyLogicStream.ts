@@ -10,11 +10,13 @@ export function useAnyLogicStream(): AnyLogicState | null {
     es.onmessage = (event: MessageEvent<string>) => {
       try {
         const data: AnyLogicState | null = JSON.parse(event.data) as AnyLogicState | null
-        if (data !== null) setState(data)
+        setState(data)
       } catch {
         // ignore parse errors
       }
     }
+
+    es.onerror = () => setState(null)
 
     return () => es.close()
   }, [])

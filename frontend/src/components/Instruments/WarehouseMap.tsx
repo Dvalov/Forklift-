@@ -2,7 +2,6 @@ import { type ReactElement, useRef, useState, useEffect } from 'react'
 import { useForkliftQuery } from '@/components/ForkliftStatus/useForkliftQuery'
 import { useTasksQuery } from '@/components/TaskList/useTasksQuery'
 import { useAllCellsQuery } from './useAllCellsQuery'
-import { useWaypointDriver } from './useWaypointDriver'
 import type { AnyLogicState } from '@/types/api'
 
 interface WarehouseMapProps {
@@ -41,7 +40,7 @@ export default function WarehouseMap({
   angle,
   anylogicData = null,
 }: WarehouseMapProps) {
-  const { data } = useForkliftQuery()
+  const { data } = useForkliftQuery(anylogicData === null ? 250 : 1000)
   const { data: tasks } = useTasksQuery()
   const allCells = useAllCellsQuery()
 
@@ -59,7 +58,6 @@ export default function WarehouseMap({
     ? { x: data.position_x, z: data.position_z }
     : fallbackPosition
 
-  const activeTask = tasks?.find(t => t.status === 'in_progress') ?? null
   const targetTask = tasks?.find(t => t.status === 'in_progress' || t.status === 'pending') ?? null
 
   const maxCellX = allCells.length > 0
@@ -161,7 +159,8 @@ export default function WarehouseMap({
 
   const tgt = cellToPixel(targetCell.x, targetCell.y)
 
-  const { px: animPx, py: animPy, pendingWaypoints } = useWaypointDriver(activeTask, forkliftCell)
+  const forkliftPx = (forkliftCell.x + 0.5) * CELL_SIZE
+  const forkliftPy = (forkliftCell.y + 0.5) * CELL_SIZE
 
   return (
     <div
@@ -289,16 +288,13 @@ export default function WarehouseMap({
               })()
           }
 
-          {/* Waypoint highlight layer — local pending queue (always in sync with animation) */}
-          {pendingWaypoints
-            .filter(({ x, y }) => !(x === targetCell.x && y === targetCell.y))
-            .map(({ x, y }) => (
-              <rect key={`wp-${x}:${y}`}
-                x={x * CELL_SIZE} y={y * CELL_SIZE}
-                width={CELL_SIZE} height={CELL_SIZE}
-                fill="rgba(58,185,80,0.2)" stroke="#3fb950" strokeWidth="1" />
-            ))
-          }
+          {/* Remaining route reported by Django */}
+          {!useAnyLogic && data?.remaining_waypoints?.map(({ x, z }, index) => (
+            <rect key={`wp-${x}:${z}:${index}`}
+              x={x * CELL_SIZE} y={z * CELL_SIZE}
+              width={CELL_SIZE} height={CELL_SIZE}
+              fill="rgba(58,185,80,0.2)" stroke="#3fb950" strokeWidth="1" />
+          ))}
 
           {!useAnyLogic && Array.from({ length: derivedCols + 1 }, (_, i) => (
             <line key={`v${i}`} x1={i * CELL_SIZE} y1={0} x2={i * CELL_SIZE} y2={svgHeight} stroke="rgba(0,255,255,0.15)" strokeWidth="0.5" />
@@ -339,8 +335,7 @@ export default function WarehouseMap({
                 )
               })()
             : (
-                // Fallback mode: existing useWaypointDriver animation via SVG transform attribute
-                <g transform={`translate(${animPx}, ${animPy})`}>
+                <g style={{ transform: `translate(${forkliftPx}px, ${forkliftPy}px)`, transition: 'transform 0.25s linear' }}>
                   <polygon
                     points="0,-8 -6,5 6,5"
                     fill="#00ffff"

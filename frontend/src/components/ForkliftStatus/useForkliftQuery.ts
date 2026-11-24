@@ -3,7 +3,7 @@ import { getForklift } from '@/api/forklift'
 import { FORKLIFT_ID } from '@/config'
 import type { Forklift } from '@/types/api'
 
-export function useForkliftQuery(): {
+export function useForkliftQuery(refetchInterval = 1000): {
   data: Forklift | undefined
   isLoading: boolean
   isError: boolean
@@ -16,7 +16,7 @@ export function useForkliftQuery(): {
       if (error) throw new Error(error)
       return data as Forklift
     },
-    refetchInterval: 1000,
+    refetchInterval,
     refetchIntervalInBackground: true,
   })
 

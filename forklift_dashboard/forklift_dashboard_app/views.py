@@ -1,5 +1,6 @@
 import logging
 
+from django.db.models import OuterRef, Subquery
 from django.shortcuts import render
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -17,6 +18,13 @@ logger = logging.getLogger(__name__)
 class ForkliftViewSet(viewsets.ModelViewSet):
     queryset = Forklift.objects.all()
     serializer_class = ForkliftSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.action == 'retrieve':
+            route = Task.objects.filter(forklift_id=OuterRef('pk'), status='in_progress')
+            queryset = queryset.annotate(remaining_waypoints=Subquery(route.values('path_waypoints')[:1]))
+        return queryset
 
     def get_serializer_class(self):
         if self.action == 'update' or self.action == 'partial_update':
@@ -231,49 +239,6 @@ class TaskViewSet(viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
         except Exception:
             return Response({"error": "Task not found"}, status=status.HTTP_404_NOT_FOUND)
-
-    @action(detail=True, methods=['post'], url_path='advance')
-    def advance(self, request, pk=None):
-        from django.utils import timezone
-        from django.conf import settings as django_settings
-        from .scheduler import DISCHARGE_RATE, _fetch_real_coords
-
-        task = self.get_object()
-        if task.status != 'in_progress':
-            return Response({'error': 'task is not in progress'}, status=status.HTTP_400_BAD_REQUEST)
-        if not task.path_waypoints:
-            return Response({'error': 'no waypoints'}, status=status.HTTP_400_BAD_REQUEST)
-
-        waypoints = list(task.path_waypoints)
-        next_wp = waypoints.pop(0)
-
-        forklift = task.forklift
-        forklift.cell_x = round(next_wp['x'])
-        forklift.cell_y = round(next_wp.get('y', forklift.cell_y))
-        forklift.cell_z = round(next_wp['z'])
-        forklift.charge_level = max(0.0, forklift.charge_level - DISCHARGE_RATE)
-
-        warehouse_id = getattr(django_settings, 'WAREHOUSE_ID', None)
-        real = _fetch_real_coords(warehouse_id, forklift.cell_x, forklift.cell_y, forklift.cell_z)
-        if real:
-            forklift.position_x = real['x']
-            forklift.position_y = real['y']
-            forklift.position_z = real['z']
-        forklift.save()
-
-        task.path_waypoints = waypoints
-        task.frontend_advanced_at = timezone.now()
-        if not waypoints:
-            task.status = 'completed'
-            forklift.status = 'idle'
-            forklift.speed = 0.0
-            forklift.save()
-        task.save()
-        if not waypoints:
-            logger.info("Task %s status: in_progress -> completed (forklift=%s api=advance)",
-                        task.pk, task.forklift_id)
-
-        return Response(TaskSerializer(task).data)
 
     @action(detail=True, methods=['post'], url_path='cancel')
     def cancel_task(self, request, pk=None):

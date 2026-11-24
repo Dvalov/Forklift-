@@ -8,6 +8,7 @@ from http import HTTPStatus
 import requests as http_requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ HTTP_PROXIES = {'http': None, 'https': None}
 
 SIMULATION_JOB_ID = 'forklift_simulation'
 SIMULATION_INTERVAL_SECONDS = 0.5
-FRONTEND_ADVANCE_WINDOW = timedelta(seconds=2)
+ROUTE_PREVIEW_DURATION = timedelta(seconds=0.75)
 
 DISCHARGE_RATE = 0.5  # charge_level units lost per tick of movement
 MOVING_SPEED = 1.0
@@ -218,18 +219,8 @@ def _tick_django_mode(forklift, forklift_id, warehouse_id):
                 "Next task selected: task=%s forklift=%s status=%s mode=django",
                 pending.pk, forklift_id, pending.status,
             )
-            path = _fetch_path(
-                forklift_id=forklift_id, warehouse_id=warehouse_id,
-                from_x=forklift.cell_x, from_y=forklift.cell_y, from_z=forklift.cell_z,
-                dest_x=2 * pending.dest_cell_x - 1, dest_y=pending.dest_cell_y, dest_z=pending.dest_cell_z,
-            )
+            path = _fetch_task_path(forklift, warehouse_id, pending)
             if path is None:
-                logger.error(
-                    "Could not fetch path for task %s (%s,%s,%s)->(%s,%s,%s)",
-                    pending.pk,
-                    forklift.cell_x, forklift.cell_y, forklift.cell_z,
-                    pending.dest_cell_x, pending.dest_cell_y, pending.dest_cell_z,
-                )
                 return
 
             if path == []:
@@ -247,27 +238,29 @@ def _tick_django_mode(forklift, forklift_id, warehouse_id):
 
             pending.path_waypoints = path
             pending.status = _TASK_IN_PROGRESS
-            pending.save()
-            forklift.status = _FORKLIFT_MOVING
-            forklift.speed = MOVING_SPEED
-            forklift.save()
-            in_progress = pending
+            with transaction.atomic():
+                pending.save()
+                if forklift.status != _FORKLIFT_IDLE or forklift.speed != 0:
+                    forklift.status = _FORKLIFT_IDLE
+                    forklift.speed = 0.0
+                    forklift.save()
             logger.info(
-                "Task %s status: pending -> in_progress (forklift=%s mode=django waypoints=%d)",
+                "Task %s status: pending -> in_progress (forklift=%s mode=django route_preview=%d)",
                 pending.pk, forklift_id, len(path),
             )
+            return
         else:
             logger.info("No pending tasks: forklift=%s mode=django", forklift_id)
 
     if in_progress and in_progress.path_waypoints:
-        if (in_progress.frontend_advanced_at and
-                timezone.now() - in_progress.frontend_advanced_at < FRONTEND_ADVANCE_WINDOW):
-            logger.debug("Task %s: frontend driving, skipping backend tick", in_progress.pk)
+        if forklift.status == _FORKLIFT_IDLE and timezone.now() - in_progress.updated_at < ROUTE_PREVIEW_DURATION:
             return
 
         waypoints = list(in_progress.path_waypoints)
         next_wp = waypoints.pop(0)
 
+        forklift.status = _FORKLIFT_MOVING
+        forklift.speed = MOVING_SPEED
         forklift.cell_x = round(next_wp['x'])
         forklift.cell_y = round(next_wp.get('y', forklift.cell_y))
         forklift.cell_z = round(next_wp['z'])
@@ -285,24 +278,24 @@ def _tick_django_mode(forklift, forklift_id, warehouse_id):
             forklift.position_y = real['y']
             forklift.position_z = real['z']
 
-        forklift.save()
-
         in_progress.path_waypoints = waypoints
         if not waypoints:
             in_progress.status = _TASK_COMPLETED
-            in_progress.save()
             forklift.status = _FORKLIFT_IDLE
             forklift.speed = 0.0
             forklift.hydraulic_pressure = 0.0
             forklift.pump_rpm = 0
             forklift.oil_temp = round(max(MIN_OIL_TEMP, forklift.oil_temp - OIL_TEMP_DROP_ON_STOP), 1)
+
+        with transaction.atomic():
             forklift.save()
+            in_progress.save()
+
+        if not waypoints:
             logger.info(
                 "Task %s status: in_progress -> completed (forklift=%s mode=django cell=%s,%s)",
                 in_progress.pk, forklift_id, forklift.cell_x, forklift.cell_z,
             )
-        else:
-            in_progress.save()
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +401,37 @@ def _fetch_real_coords(warehouse_id, cell_x, cell_y, cell_z):
         return None
 
 
+def _fetch_task_path(forklift, warehouse_id, task):
+    from_x, from_y, from_z = forklift.cell_x, forklift.cell_y, forklift.cell_z
+    pickup_path = []
+    # Tasks created without a pickup address retain their destination-only route.
+    if task.source_cell_x > 0 and task.source_cell_z > 0:
+        pickup_path = _fetch_path(
+            forklift.pk, warehouse_id, from_x, from_y, from_z,
+            2 * task.source_cell_x - 1, task.source_cell_y, task.source_cell_z,
+        )
+        if pickup_path is None:
+            logger.warning("Could not plan pickup for task %s", task.pk)
+            return None
+        if pickup_path:
+            pickup_approach = pickup_path[-1]
+            from_x, from_y, from_z = pickup_approach['x'], pickup_approach.get('y', from_y), pickup_approach['z']
+
+    delivery_path = _fetch_path(
+        forklift.pk, warehouse_id, from_x, from_y, from_z,
+        2 * task.dest_cell_x - 1, task.dest_cell_y, task.dest_cell_z,
+    )
+    if delivery_path is None:
+        logger.warning("Could not plan delivery for task %s", task.pk)
+        return None
+
+    logger.info(
+        "Task %s route planned: pickup_waypoints=%s delivery_waypoints=%s",
+        task.pk, len(pickup_path), len(delivery_path),
+    )
+    return pickup_path + delivery_path
+
+
 def _fetch_path(forklift_id, warehouse_id, from_x, from_y, from_z, dest_x, dest_y, dest_z):
     """Call Converter get_cell_path and return list of {"x", "z"} waypoints, or None on error."""
     try:
@@ -420,7 +444,14 @@ def _fetch_path(forklift_id, warehouse_id, from_x, from_y, from_z, dest_x, dest_
         }, timeout=CONVERTER_PATH_TIMEOUT_SECONDS, proxies=HTTP_PROXIES)
         resp.raise_for_status()
         data = resp.json()
-        return data.get('path', [])
+        path = data.get('path')
+        if data.get('error') or not isinstance(path, list):
+            logger.warning(
+                "Converter could not route (%s,%s)->(%s,%s): %s",
+                from_x, from_z, dest_x, dest_z, data.get('error') or 'invalid path',
+            )
+            return None
+        return path
     except Exception:
         logger.warning("Converter unavailable, path fetch skipped")
         return None
