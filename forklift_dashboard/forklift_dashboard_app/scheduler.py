@@ -121,7 +121,7 @@ def simulation_tick():
 def _tick_anylogic_mode(forklift, anylogic_state):
     from .models import Task
 
-    recover_missing_anylogic_orders(forklift.pk, anylogic_state)
+    #recover_missing_anylogic_orders(forklift.pk, anylogic_state)
 
     forklifts = anylogic_state.get('forklifts', [])
     al_fl = forklifts[0] if forklifts else {}
