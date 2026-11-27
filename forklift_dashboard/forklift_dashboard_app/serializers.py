@@ -25,13 +25,15 @@ class PositionUpdateSerializer(serializers.Serializer):
 
 
 class TaskSerializer(serializers.ModelSerializer):
+    can_modify = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = Task
         fields = ['id', 'forklift_id', 'status', 'origin_x', 'origin_y', 'origin_z',
                   'dest_x', 'dest_y', 'dest_z', 'dest_cell_x', 'dest_cell_y', 'dest_cell_z',
                   'source_cell_x', 'source_cell_y', 'source_cell_z',
                   'source_cell_name', 'dest_cell_name',
-                  'path_waypoints', 'created_at', 'updated_at']
+                  'path_waypoints', 'created_at', 'updated_at', 'can_modify']
         read_only_fields = ['id', 'forklift_id', 'path_waypoints', 'created_at', 'updated_at']
 
 

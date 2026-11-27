@@ -65,6 +65,7 @@ db.sqlite3-shm
 *.sqlite3-wal
 *.sqlite3-shm
 **/migrations/
+!forklift_dashboard/forklift_dashboard_app/migrations/
 
 # Flask stuff:
 instance/

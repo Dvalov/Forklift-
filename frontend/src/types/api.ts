@@ -25,6 +25,7 @@ export interface Task {
   id: number
   forklift_id: number
   status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'cancelled'
+  can_modify: boolean
   origin_x: number
   origin_y: number
   origin_z: number

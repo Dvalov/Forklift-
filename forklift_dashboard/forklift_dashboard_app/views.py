@@ -1,5 +1,7 @@
 import logging
 
+from django.conf import settings
+from django.db import transaction
 from django.db.models import OuterRef, Subquery
 from django.shortcuts import render
 from rest_framework import viewsets, status
@@ -8,6 +10,9 @@ from rest_framework.response import Response
 from rest_framework.exceptions import NotFound, ValidationError
 from django.shortcuts import get_object_or_404
 from .models import Forklift, Task
+from .scheduler import (
+    anylogic_dispatch_state, dispatch_next_task, dispatch_task, recover_missing_anylogic_orders,
+)
 from .serializers import (
     ForkliftSerializer, ForkliftUpdateSerializer, PositionUpdateSerializer,
     TaskSerializer, TaskCreateSerializer, TaskUpdateSerializer
@@ -131,6 +136,8 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Task.objects.all()
+        if self.action in {'update', 'partial_update', 'destroy', 'cancel_task'}:
+            queryset = queryset.select_for_update()
         status_filter = self.request.query_params.get('status')
         forklift_filter = self.request.query_params.get('forklift')
 
@@ -155,8 +162,7 @@ class TaskViewSet(viewsets.ModelViewSet):
                 return Response({"error": "Forklift not found"}, status=status.HTTP_400_BAD_REQUEST)
 
         if forklift is None:
-            from django.conf import settings as _s
-            fallback_id = getattr(_s, 'FORKLIFT_ID', None)
+            fallback_id = getattr(settings, 'FORKLIFT_ID', None)
             if fallback_id:
                 try:
                     forklift = Forklift.objects.get(pk=fallback_id)
@@ -180,17 +186,32 @@ class TaskViewSet(viewsets.ModelViewSet):
             source_cell_name=data['source_cell_name'],
             dest_cell_name=data['dest_cell_name'],
         )
+        if (
+            forklift is not None
+            and forklift.pk == settings.FORKLIFT_ID
+            and task.source_cell_name
+            and task.dest_cell_name
+        ):
+            with anylogic_dispatch_state() as anylogic_state:
+                if anylogic_state is not None:
+                    if recover_missing_anylogic_orders(forklift.pk, anylogic_state):
+                        dispatch_next_task(anylogic_state, forklift)
+                    else:
+                        logger.info("Dispatching new task %s to AnyLogic", task.pk)
+                        dispatch_task(task.pk, anylogic_state)
+                    task.refresh_from_db()
         logger.info("Task %s queued: forklift=%s status=%s", task.pk, task.forklift_id, task.status)
 
         return Response(TaskSerializer(task).data, status=status.HTTP_201_CREATED)
 
+    @transaction.atomic
     def update(self, request, *args, **kwargs):
         """Обновление задания (только если pending)"""
         try:
             task = self.get_object()
 
-            if task.status != 'pending':
-                return Response({"error": "Can only update pending tasks"},
+            if task.status != 'pending' or not task.can_modify():
+                return Response({"error": "Can only update unsent pending tasks"},
                                 status=status.HTTP_400_BAD_REQUEST)
 
             serializer = TaskUpdateSerializer(task, data=request.data, partial=True)
@@ -209,13 +230,14 @@ class TaskViewSet(viewsets.ModelViewSet):
         except Exception:
             return Response({"error": "Task not found"}, status=status.HTTP_404_NOT_FOUND)
 
+    @transaction.atomic
     def destroy(self, request, *args, **kwargs):
         """Удаление задания (только pending или cancelled)"""
         try:
             task = self.get_object()
 
             if not task.can_modify():
-                return Response({"error": "Can only delete pending or cancelled tasks"},
+                return Response({"error": "Can only delete unsent pending or cancelled tasks"},
                                 status=status.HTTP_400_BAD_REQUEST)
 
             task.delete()
@@ -241,6 +263,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             return Response({"error": "Task not found"}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['post'], url_path='cancel')
+    @transaction.atomic
     def cancel_task(self, request, pk=None):
         """Отмена задания"""
         try:
@@ -252,7 +275,7 @@ class TaskViewSet(viewsets.ModelViewSet):
                     'id': task.id,
                     'status': task.status
                 })
-            return Response({"error": "Can only cancel pending tasks"},
+            return Response({"error": "Can only cancel unsent pending tasks"},
                             status=status.HTTP_400_BAD_REQUEST)
 
         except Exception:

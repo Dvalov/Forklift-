@@ -30,7 +30,7 @@ export default function TaskRow({ task, queuePosition }: TaskRowProps) {
     else if (task.status === 'cancelled') deleteMutation.mutate(task.id)
   }
 
-  const showX = task.status === 'pending' || task.status === 'cancelled'
+  const showX = task.can_modify
   const showRestore = task.status === 'cancelled'
   const isError = cancelMutation.isError || deleteMutation.isError || restoreMutation.isError
   const errorText =

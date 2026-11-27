@@ -1,4 +1,7 @@
+from django.conf import settings
 from django.test import TestCase
+from rest_framework.test import APIClient
+from requests import ReadTimeout
 from unittest.mock import patch
 from forklift_dashboard_app.models import Forklift, Task
 from forklift_dashboard_app.scheduler import _tick_anylogic_mode
@@ -7,8 +10,8 @@ from forklift_dashboard_app.scheduler import _tick_anylogic_mode
 class AnyLogicSchedulerTests(TestCase):
 
     def setUp(self):
-        self.enterContext(patch('forklift_dashboard_app.scheduler._last_dispatched_task_id', None))
         self.forklift = Forklift.objects.create(
+            pk=settings.FORKLIFT_ID,
             name='Test Forklift',
             status='idle',
             charge_level=20.0,
@@ -31,8 +34,7 @@ class AnyLogicSchedulerTests(TestCase):
         self.assertEqual(self.forklift.charge_level, 25.0)
         self.assertEqual(task.status, 'pending')
 
-    @patch('forklift_dashboard_app.scheduler._dispatch_next_task')
-    def test_return_to_base_after_charging_leaves_task_pending(self, mock_dispatch):
+    def test_return_to_base_after_charging_leaves_task_pending(self):
         task = Task.objects.create(
             forklift=self.forklift,
             status='pending',
@@ -48,10 +50,8 @@ class AnyLogicSchedulerTests(TestCase):
         task.refresh_from_db()
         self.assertEqual(self.forklift.status, 'moving')
         self.assertEqual(task.status, 'pending')  # Still pending until AnyLogic actually starts order
-        mock_dispatch.assert_not_called()
 
-    @patch('forklift_dashboard_app.scheduler._dispatch_next_task')
-    def test_arrival_at_idle_does_not_complete_task_and_triggers_dispatch(self, mock_dispatch):
+    def test_arrival_at_idle_does_not_complete_task(self):
         task = Task.objects.create(
             forklift=self.forklift,
             status='pending',
@@ -67,7 +67,6 @@ class AnyLogicSchedulerTests(TestCase):
         task.refresh_from_db()
         self.assertEqual(self.forklift.status, 'idle')
         self.assertEqual(task.status, 'pending')  # NOT completed!
-        mock_dispatch.assert_called_once()
 
     def test_task_remains_pending_on_working_states(self):
         for working_state in ('GoToSource', 'PickUp', 'GoToDest', 'PutDown'):
@@ -85,103 +84,132 @@ class AnyLogicSchedulerTests(TestCase):
             self.assertEqual(task.status, 'pending')
             task.delete()
 
-    @patch('forklift_dashboard_app.scheduler._dispatch_next_task')
-    def test_in_progress_task_completes_before_next_dispatch(self, mock_dispatch):
-        for start_state in ('Complete', 'Idle', 'ReturnToBase'):
-            mock_dispatch.reset_mock()
-            in_prog = Task.objects.create(
-                forklift=self.forklift,
-                status='in_progress',
-                dest_x=1, dest_y=0, dest_z=1,
-                dest_cell_name='Cell_1',
-                source_cell_name='Cell_0',
-            )
-            pending = Task.objects.create(
-                forklift=self.forklift,
-                status='pending',
-                dest_x=2, dest_y=0, dest_z=2,
-                dest_cell_name='Cell_2',
-                source_cell_name='Cell_1',
-            )
-            state = {'forklifts': [{'state': start_state, 'busy': False, 'charge': 80.0}]}
-            _tick_anylogic_mode(self.forklift, state)
-
-            in_prog.refresh_from_db()
-            self.assertEqual(in_prog.status, 'completed')
-            if start_state != 'Idle':
-                mock_dispatch.assert_not_called()
-                _tick_anylogic_mode(self.forklift, {'forklifts': [{'state': 'Idle', 'busy': True}]})
-                mock_dispatch.assert_not_called()
-                _tick_anylogic_mode(self.forklift, {'forklifts': [{'state': 'Idle', 'busy': False}]})
-            mock_dispatch.assert_called_once()
-
-            in_prog.delete()
-            pending.delete()
-
-    @patch('forklift_dashboard_app.scheduler._dispatch_next_task')
-    def test_just_dispatched_task_not_immediately_completed_on_subsequent_ticks(self, mock_dispatch):
-        import forklift_dashboard_app.scheduler as sched
-        task = Task.objects.create(
-            forklift=self.forklift,
-            status='in_progress',
-            dest_x=1, dest_y=0, dest_z=1,
-            dest_cell_name='Cell_1',
-            source_cell_name='Cell_0',
-        )
-        # Simulate that task was just dispatched in current or previous tick
-        sched._last_dispatched_task_id = task.pk
-
-        for start_state in ('ReturnToBase', 'Idle'):
-            mock_dispatch.reset_mock()
-            state = {'forklifts': [{'state': start_state, 'busy': False, 'charge': 80.0}]}
-            _tick_anylogic_mode(self.forklift, state)
-
-            task.refresh_from_db()
-            self.assertEqual(task.status, 'in_progress')
-            mock_dispatch.assert_not_called()
-
-        sched._last_dispatched_task_id = None
-        task.delete()
-
-    @patch('forklift_dashboard_app.scheduler.http_requests.post')
-    def test_dispatch_next_task_sets_in_progress_on_success(self, mock_post):
-        mock_resp = mock_post.return_value
-        mock_resp.ok = True
-        mock_resp.status_code = 200
-
-        task = Task.objects.create(
-            forklift=self.forklift,
-            status='pending',
-            dest_x=1, dest_y=0, dest_z=1,
-            dest_cell_name='Cell_1',
-            source_cell_name='Cell_0',
-        )
-        state = {
-            'cells': [
-                {'name': 'Cell_0', 'id': 10},
-                {'name': 'Cell_1', 'id': 20},
-            ],
-            'forklifts': [{'state': 'Idle', 'busy': False, 'charge': 100.0}],
+    def _order_payload(self):
+        return {
+            'forklift_id': self.forklift.pk,
+            'dest_x': 1, 'dest_y': 0, 'dest_z': 1,
+            'dest_cell_x': 1, 'dest_cell_y': 1, 'dest_cell_z': 1,
+            'source_cell_name': 'Cell_0', 'dest_cell_name': 'Cell_1',
         }
-        _tick_anylogic_mode(self.forklift, state)
 
-        task.refresh_from_db()
-        self.assertEqual(task.status, 'in_progress')
-        mock_post.assert_called_once()
+    def _state(self, state, pending, done):
+        return {
+            'cells': [{'name': 'Cell_0', 'id': 10}, {'name': 'Cell_1', 'id': 20}],
+            'forklifts': [{'state': state, 'busy': state != 'Idle'}],
+            'pending': pending,
+            'done': done,
+        }
 
-    @patch('forklift_dashboard_app.scheduler._dispatch_next_task')
-    def test_dispatch_requires_explicit_idle_and_not_busy(self, mock_dispatch):
-        for forklifts in (
-            [],
-            [{'busy': False}],
-            [{'state': 'Idle'}],
-            [{'state': 'Idle', 'busy': True}],
-            [{'state': 'Complete', 'busy': False}],
-            [{'state': 'ReturnToBase', 'busy': False}],
+    @patch('forklift_dashboard_app.scheduler._fetch_anylogic_state')
+    @patch('forklift_dashboard_app.scheduler.http_requests.post')
+    def test_create_sends_while_busy_and_syncs_each_order(self, post, fetch_state):
+        post.return_value.json.return_value = {'ok': True}
+        fetch_state.side_effect = [
+            self._state('GoToDest', pending=0, done=4),
+            self._state('GoToDest', pending=1, done=4),
+        ]
+        client = APIClient()
+
+        responses = [client.post('/api/tasks/', self._order_payload(), format='json') for _ in range(2)]
+        for response in responses:
+            self.assertEqual(response.status_code, 201)
+            self.assertEqual(response.data['status'], 'pending')
+            self.assertFalse(response.data['can_modify'])
+
+        first, second = [Task.objects.get(pk=response.data['id']) for response in responses]
+        self.assertEqual((first.anylogic_order_number, second.anylogic_order_number), (6, 7))
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args.kwargs['json'], {'sourceCellId': 10, 'destCellId': 20})
+        self.assertEqual(client.post(f'/api/tasks/{second.pk}/cancel/').status_code, 400)
+
+        for state, pending, done, expected in (
+            ('GoToDest', 2, 4, ('pending', 'pending')),
+            ('GoToSource', 1, 5, ('in_progress', 'pending')),
+            ('GoToSource', 0, 6, ('completed', 'in_progress')),
+            ('Idle', 0, 7, ('completed', 'completed')),
         ):
-            with self.subTest(forklifts=forklifts):
-                _tick_anylogic_mode(self.forklift, {'forklifts': forklifts})
-                mock_dispatch.assert_not_called()
+            with self.subTest(done=done):
+                _tick_anylogic_mode(self.forklift, self._state(state, pending, done))
+                first.refresh_from_db()
+                second.refresh_from_db()
+                self.assertEqual((first.status, second.status), expected)
+                self.assertEqual(post.call_count, 2)
+
+    @patch('forklift_dashboard_app.scheduler._fetch_anylogic_state', return_value=None)
+    @patch('forklift_dashboard_app.scheduler.http_requests.post')
+    def test_offline_task_retries_while_charging_and_accepts_only_ok_true(self, post, fetch_state):
+        post.return_value.json.side_effect = [{'ok': False}, {'ok': True}]
+        response = APIClient().post('/api/tasks/', self._order_payload(), format='json')
+        self.assertEqual(response.status_code, 201)
+        task = Task.objects.get(pk=response.data['id'])
+        self.assertIsNone(task.anylogic_order_number)
+
+        state = self._state('Charging', pending=0, done=4)
+        _tick_anylogic_mode(self.forklift, state)
+        task.refresh_from_db()
+        self.assertIsNone(task.anylogic_order_number)
+
+        _tick_anylogic_mode(self.forklift, state)
+        task.refresh_from_db()
+        self.assertEqual(task.anylogic_order_number, 5)
+        self.assertEqual(task.status, 'pending')
+
+    @patch('forklift_dashboard_app.scheduler._fetch_anylogic_state')
+    @patch('forklift_dashboard_app.scheduler.http_requests.post', side_effect=ReadTimeout)
+    def test_timeout_after_sending_does_not_resend(self, post, fetch_state):
+        fetch_state.return_value = self._state('Idle', pending=0, done=0)
+        response = APIClient().post('/api/tasks/', self._order_payload(), format='json')
+        task = Task.objects.get(pk=response.data['id'])
+        self.assertEqual(task.status, 'pending')
+        self.assertEqual(task.anylogic_order_number, 0)
+        _tick_anylogic_mode(self.forklift, fetch_state.return_value)
+        post.assert_called_once()
+
+    @patch('forklift_dashboard_app.scheduler._fetch_anylogic_state')
+    @patch('forklift_dashboard_app.scheduler.http_requests.post')
+    def test_empty_queue_after_restart_restores_pending_orders_in_order(self, post, fetch_state):
+        payload = self._order_payload()
+        pending_first = Task.objects.create(**payload, anylogic_order_number=6)
+        pending_second = Task.objects.create(
+            **{**payload, 'source_cell_name': 'Cell_1', 'dest_cell_name': 'Cell_0'},
+            anylogic_order_number=7,
+        )
+        finished = Task.objects.create(**payload, status='completed', anylogic_order_number=5)
+        post.return_value.json.return_value = {'ok': True}
+        fresh_state = self._state('Idle', pending=0, done=0)
+        fetch_state.return_value = fresh_state
+
+        _tick_anylogic_mode(self.forklift, fresh_state)
+        pending_first.refresh_from_db()
+        pending_second.refresh_from_db()
+        self.assertEqual(pending_first.anylogic_order_number, 1)
+        self.assertIsNone(pending_second.anylogic_order_number)
+        self.assertEqual(post.call_args.kwargs['json'], {'sourceCellId': 10, 'destCellId': 20})
+
+        state_with_first_order = self._state('GoToSource', pending=0, done=0)
+        _tick_anylogic_mode(self.forklift, state_with_first_order)
+        pending_first.refresh_from_db()
+        pending_second.refresh_from_db()
+        finished.refresh_from_db()
+        self.assertEqual(pending_first.status, 'in_progress')
+        self.assertEqual((pending_second.status, pending_second.anylogic_order_number), ('pending', 2))
+        self.assertEqual((finished.status, finished.anylogic_order_number), ('completed', 5))
+        self.assertEqual(post.call_args.kwargs['json'], {'sourceCellId': 20, 'destCellId': 10})
+
+        _tick_anylogic_mode(self.forklift, self._state('GoToSource', pending=1, done=0))
+        self.assertEqual(post.call_count, 2)
+        fetch_state.assert_called_once()
+
+    @patch('forklift_dashboard_app.scheduler._fetch_anylogic_state')
+    @patch('forklift_dashboard_app.scheduler.http_requests.post')
+    def test_recovery_does_not_resend_if_confirmation_shows_an_existing_order(self, post, fetch_state):
+        task = Task.objects.create(**self._order_payload(), anylogic_order_number=1)
+        fetch_state.return_value = self._state('GoToSource', pending=0, done=0)
+
+        _tick_anylogic_mode(self.forklift, self._state('Idle', pending=0, done=0))
+        task.refresh_from_db()
+        self.assertEqual(task.anylogic_order_number, 1)
+        post.assert_not_called()
 
     def test_task_completes_when_anylogic_complete_or_idle(self):
         task = Task.objects.create(

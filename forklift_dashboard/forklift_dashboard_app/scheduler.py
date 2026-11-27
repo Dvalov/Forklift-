@@ -2,8 +2,10 @@ import atexit
 import logging
 import os
 import random
+from contextlib import contextmanager
 from datetime import timedelta
 from http import HTTPStatus
+from threading import Lock
 
 import requests as http_requests
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -62,7 +64,7 @@ _AL_STATE_TO_DJANGO: dict[str, str] = {
 }
 
 _scheduler = None
-_last_dispatched_task_id: int | None = None
+_dispatch_lock = Lock()
 
 
 def start_scheduler():
@@ -102,11 +104,11 @@ def simulation_tick():
             logger.error("Tick skipped: forklift=%s not found in Django, anylogic_state=not_polled", forklift_id)
             return
 
-        anylogic_state = _fetch_anylogic_state()
-        if anylogic_state is not None:
-            _tick_anylogic_mode(forklift, anylogic_state)
-        else:
-            _tick_django_mode(forklift, forklift_id, warehouse_id)
+        with anylogic_dispatch_state() as anylogic_state:
+            if anylogic_state is not None:
+                _tick_anylogic_mode(forklift, anylogic_state)
+            else:
+                _tick_django_mode(forklift, forklift_id, warehouse_id)
 
     except Exception:
         logger.exception("Unhandled error in simulation_tick")
@@ -117,55 +119,40 @@ def simulation_tick():
 # ---------------------------------------------------------------------------
 
 def _tick_anylogic_mode(forklift, anylogic_state):
-    global _last_dispatched_task_id
     from .models import Task
 
+    recover_missing_anylogic_orders(forklift.pk, anylogic_state)
+
     forklifts = anylogic_state.get('forklifts', [])
-    al_fl = forklifts[0] if forklifts else None
-    reported_state = al_fl.get('state') if al_fl else None
-    al_busy = al_fl.get('busy') if al_fl else None
-    al_state = al_fl.get('state', _AL_DEFAULT_STATE) if al_fl else _AL_DEFAULT_STATE
+    al_fl = forklifts[0] if forklifts else {}
+    reported_state = al_fl.get('state')
+    al_state = reported_state or _AL_DEFAULT_STATE
     django_status = _AL_STATE_TO_DJANGO.get(al_state, _FORKLIFT_IDLE)
 
-    in_progress = Task.objects.filter(forklift=forklift, status=_TASK_IN_PROGRESS).first()
-    logger.info(
-        "Tick: forklift=%s anylogic_state=%s busy=%s anylogic_pending=%s anylogic_done=%s "
-        "django_task=%s django_status=%s awaiting_start_task=%s",
-        forklift.pk, reported_state, al_busy,
-        anylogic_state.get('pending'), anylogic_state.get('done'),
-        in_progress.pk if in_progress else None, in_progress.status if in_progress else None,
-        _last_dispatched_task_id,
+    active_tasks = Task.objects.filter(
+        forklift=forklift, status__in=(_TASK_PENDING, _TASK_IN_PROGRESS),
     )
-
-    # 1. Task Lifecycle Management
-    if al_state in _AL_TASK_WORKING_STATES:
-        if _last_dispatched_task_id is not None:
-            logger.info(
-                "AnyLogic entered working state %s: clearing start wait for task=%s",
-                al_state, _last_dispatched_task_id,
-            )
-        _last_dispatched_task_id = None
-
-    elif in_progress:
-        if reported_state in _AL_TASK_FINISH_STATES and in_progress.pk != _last_dispatched_task_id:
-            in_progress.status = _TASK_COMPLETED
-            in_progress.save()
-            logger.info(
-                "Task %s status: in_progress -> completed (forklift=%s anylogic_state=%s)",
-                in_progress.pk, forklift.pk, reported_state,
-            )
-            in_progress = None
-            _last_dispatched_task_id = None
-        else:
-            reason = 'awaiting_working_state' if in_progress.pk == _last_dispatched_task_id else 'awaiting_finish_state'
-            logger.info(
-                "Queue waiting: forklift=%s task=%s status=in_progress anylogic_state=%s reason=%s",
-                forklift.pk, in_progress.pk, reported_state, reason,
+    done = anylogic_state.get('done')
+    if type(done) is int and done >= 0:
+        accepted = active_tasks.filter(anylogic_order_number__gt=0)
+        accepted.filter(anylogic_order_number__lte=done).update(
+            status=_TASK_COMPLETED, updated_at=timezone.now(),
+        )
+        if reported_state in _AL_TASK_WORKING_STATES:
+            accepted.filter(status=_TASK_PENDING, anylogic_order_number=done + 1).update(
+                status=_TASK_IN_PROGRESS, updated_at=timezone.now(),
             )
 
-    if in_progress is None and reported_state == _AL_DEFAULT_STATE and al_busy is False:
-        _last_dispatched_task_id = None
-        _dispatch_next_task(anylogic_state, forklift)
+    # Tasks already in flight before the upgrade lack an AnyLogic order number.
+    if reported_state in _AL_TASK_FINISH_STATES:
+        legacy_task = active_tasks.filter(
+            status=_TASK_IN_PROGRESS, anylogic_order_number__isnull=True, path_waypoints=[],
+        ).first()
+        if legacy_task:
+            legacy_task.status = _TASK_COMPLETED
+            legacy_task.save(update_fields=['status', 'updated_at'])
+
+    dispatch_next_task(anylogic_state, forklift)
 
     # 2. Forklift Status & Telemetry Sync
     if al_state in _AL_MOVING_STATES:
@@ -202,6 +189,12 @@ def _tick_anylogic_mode(forklift, anylogic_state):
 
 def _tick_django_mode(forklift, forklift_id, warehouse_id):
     from .models import Task
+
+    tasks = Task.objects.filter(forklift=forklift)
+    if tasks.filter(
+        status__in=(_TASK_PENDING, _TASK_IN_PROGRESS), anylogic_order_number__isnull=False,
+    ).exists():
+        return
 
     in_progress = Task.objects.filter(forklift=forklift, status=_TASK_IN_PROGRESS).first()
     logger.info(
@@ -303,69 +296,118 @@ def _tick_django_mode(forklift, forklift_id, warehouse_id):
 # ---------------------------------------------------------------------------
 
 
-def _dispatch_next_task(anylogic_state, forklift):
-    """Send the next pending task to AnyLogic /order if one exists and not yet dispatched."""
-    global _last_dispatched_task_id
+@contextmanager
+def anylogic_dispatch_state():
+    with _dispatch_lock:
+        yield _fetch_anylogic_state()
+
+
+def _empty_anylogic_queue(anylogic_state):
+    forklifts = anylogic_state.get('forklifts', [])
+    return anylogic_state.get('pending') == 0 and bool(forklifts) and all(
+        forklift.get('state') == _AL_DEFAULT_STATE and forklift.get('busy') is False
+        for forklift in forklifts
+    )
+
+
+def recover_missing_anylogic_orders(forklift_id, anylogic_state):
     from .models import Task
-    next_task = Task.objects.filter(forklift=forklift, status=_TASK_PENDING).first()
-    if not next_task:
-        logger.info("No pending tasks: forklift=%s mode=anylogic", forklift.pk)
-        return
-    if next_task.pk == _last_dispatched_task_id:
-        logger.info("Task %s already dispatched: forklift=%s mode=anylogic", next_task.pk, forklift.pk)
+
+    done = anylogic_state.get('done')
+    if type(done) is not int or done < 0 or not _empty_anylogic_queue(anylogic_state):
+        return 0
+
+    pending = Task.objects.filter(forklift_id=forklift_id, status=_TASK_PENDING)
+    missing = pending.filter(anylogic_order_number__gt=done)
+    if not missing.exists():
+        return 0
+
+    # A single empty snapshot can be taken while the model is changing states.
+    confirmation = _fetch_anylogic_state()
+    if confirmation is None or confirmation.get('done') != done or not _empty_anylogic_queue(confirmation):
+        return 0
+
+    if done == 0:
+        missing = missing | pending.filter(anylogic_order_number=0)
+    recovered = missing.update(anylogic_order_number=None, updated_at=timezone.now())
+    if recovered:
+        logger.info("Restored %s pending tasks missing from the AnyLogic queue", recovered)
+    return recovered
+
+
+def dispatch_next_task(anylogic_state, forklift):
+    from .models import Task
+
+    cell_names = [cell['name'] for cell in anylogic_state.get('cells', [])]
+    task_id = Task.objects.filter(
+        forklift=forklift, status=_TASK_PENDING, anylogic_order_number__isnull=True,
+        source_cell_name__in=cell_names, dest_cell_name__in=cell_names,
+    ).values_list('pk', flat=True).first()
+    if task_id is not None:
+        dispatch_task(task_id, anylogic_state)
+
+
+@transaction.atomic
+def dispatch_task(task_id, anylogic_state):
+    from .models import Task
+
+    done = anylogic_state.get('done')
+    pending = anylogic_state.get('pending')
+    forklifts = anylogic_state.get('forklifts', [])
+    if type(done) is not int or type(pending) is not int or min(done, pending) < 0 or not forklifts:
         return
 
-    logger.info(
-        "Next task selected: task=%s forklift=%s status=%s mode=anylogic source=%s dest=%s",
-        next_task.pk, forklift.pk, next_task.status, next_task.source_cell_name, next_task.dest_cell_name,
-    )
-    al_cells = anylogic_state.get('cells', [])
-    al_source = next(
-        (c for c in al_cells if c.get('name') == next_task.source_cell_name), None
-    )
-    al_dest = next(
-        (c for c in al_cells if c.get('name') == next_task.dest_cell_name), None
-    )
-    if al_source is None or al_dest is None:
-        logger.warning(
-            "Next task %s: AnyLogic cell not found (source=%s, dest=%s)",
-            next_task.pk, next_task.source_cell_name, next_task.dest_cell_name,
-        )
+    task = Task.objects.select_for_update().filter(
+        pk=task_id, status=_TASK_PENDING, anylogic_order_number__isnull=True,
+    ).first()
+    if task is None:
         return
 
+    cells = {cell['name']: cell['id'] for cell in anylogic_state.get('cells', [])}
+    if task.source_cell_name not in cells or task.dest_cell_name not in cells:
+        logger.warning("AnyLogic cells missing for task %s", task_id)
+        return
+
+    # /order returns only ok. Use the current FIFO position and the model's completion counter.
+    active = sum(
+        forklift.get('state') in _AL_TASK_WORKING_STATES
+        or (forklift.get('state') == _AL_DEFAULT_STATE and forklift.get('busy') is True)
+        for forklift in forklifts
+    )
+    order_number = done + pending + active + 1
     try:
-        resp = http_requests.post(
+        response = http_requests.post(
             f'{ANYLOGIC_URL}/order',
-            json={'sourceCellId': al_source['id'], 'destCellId': al_dest['id']},
+            json={
+                'sourceCellId': cells[task.source_cell_name],
+                'destCellId': cells[task.dest_cell_name],
+            },
             timeout=ANYLOGIC_ORDER_TIMEOUT_SECONDS,
             proxies=HTTP_PROXIES,
         )
+    except http_requests.ConnectTimeout:
+        logger.warning("Could not connect to AnyLogic to send task %s", task_id)
+        return
+    except http_requests.RequestException as exc:
+        # The server may have accepted the POST before the response was lost.
+        logger.warning("Unknown AnyLogic dispatch outcome for task %s: %s", task_id, exc)
+        order_number = 0
+    else:
         try:
-            response_data = resp.json()
+            result = response.json()
         except ValueError:
-            response_data = None
-        logger.info(
-            "AnyLogic /order response: task=%s http_status=%s order_ok=%s",
-            next_task.pk, resp.status_code,
-            response_data.get('ok') if isinstance(response_data, dict) else None,
-        )
-        if resp.ok:
-            _last_dispatched_task_id = next_task.pk
-            next_task.status = _TASK_IN_PROGRESS
-            next_task.path_waypoints = []
-            next_task.save()
-            logger.info(
-                "Task %s status: pending -> in_progress (forklift=%s mode=anylogic source_id=%s dest_id=%s)",
-                next_task.pk, forklift.pk, al_source['id'], al_dest['id'],
-            )
+            result = None
+        if response.ok and isinstance(result, dict) and result.get('ok') is True:
+            logger.info("AnyLogic accepted task %s as order %s", task_id, order_number)
+        elif isinstance(result, dict) and result.get('ok') is False:
+            logger.warning("AnyLogic rejected task %s: %s", task_id, result.get('error'))
+            return
         else:
-            logger.warning(
-                "Failed to dispatch task %s to AnyLogic (source=%s→%s, dest=%s→%s), status=%s",
-                next_task.pk, next_task.source_cell_name, al_source['id'],
-                next_task.dest_cell_name, al_dest['id'], resp.status_code,
-            )
-    except Exception as exc:
-        logger.warning("Failed to dispatch task %s to AnyLogic: %s", next_task.pk, exc)
+            logger.warning("Unknown AnyLogic response for task %s: HTTP %s", task_id, response.status_code)
+            order_number = 0
+
+    task.anylogic_order_number = order_number
+    task.save(update_fields=['anylogic_order_number', 'updated_at'])
 
 
 def _fetch_anylogic_state():

@@ -83,6 +83,8 @@ class Task(models.Model):
     source_cell_name = models.CharField(max_length=100, blank=True, default='')
     dest_cell_name = models.CharField(max_length=100, blank=True, default='')
     path_waypoints = models.JSONField(default=list)  # list of {"x": int, "z": int} dicts
+    # Null means unsent. Zero means the POST outcome is unknown. Positive values follow AnyLogic's done counter.
+    anylogic_order_number = models.PositiveIntegerField(null=True, blank=True, editable=False)
     frontend_advanced_at = models.DateTimeField(null=True, blank=True, default=None)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -95,10 +97,10 @@ class Task(models.Model):
         return f"Task {self.id} - {self.status}"
 
     def can_modify(self):
-        return self.status in ['pending', 'cancelled']
+        return self.status in ['pending', 'cancelled'] and self.anylogic_order_number is None
 
     def cancel(self):
-        if self.status == 'pending':
+        if self.status == 'pending' and self.can_modify():
             self.status = 'cancelled'
             self.save()
             logger.info("Task %s status: pending -> cancelled (forklift=%s)", self.pk, self.forklift_id)
