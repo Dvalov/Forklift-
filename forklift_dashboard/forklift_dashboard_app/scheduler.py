@@ -134,12 +134,18 @@ def _tick_anylogic_mode(forklift, anylogic_state):
     )
     done = anylogic_state.get('done')
     if type(done) is int and done >= 0:
-        accepted = active_tasks.filter(anylogic_order_number__gt=0)
-        accepted.filter(anylogic_order_number__lte=done).update(
+        cancelled = _cancelled_order_numbers(anylogic_state)
+        last_finished = done
+        for number in sorted(cancelled):
+            if number > last_finished + 1:
+                break
+            last_finished += 1
+        accepted = active_tasks.filter(anylogic_order_number__gt=0).exclude(anylogic_order_number__in=cancelled)
+        accepted.filter(anylogic_order_number__lte=last_finished).update(
             status=_TASK_COMPLETED, updated_at=timezone.now(),
         )
         if reported_state in _AL_TASK_WORKING_STATES:
-            accepted.filter(status=_TASK_PENDING, anylogic_order_number=done + 1).update(
+            accepted.filter(status=_TASK_PENDING, anylogic_order_number=last_finished + 1).update(
                 status=_TASK_IN_PROGRESS, updated_at=timezone.now(),
             )
 
@@ -302,6 +308,39 @@ def anylogic_dispatch_state():
         yield _fetch_anylogic_state()
 
 
+def _cancelled_order_numbers(anylogic_state):
+    return {number for number in anylogic_state.get('cancelledOrders', []) if type(number) is int and number > 0}
+
+
+def remove_anylogic_order(task, anylogic_state):
+    """Remove a queued order. An unavailable or ambiguous response leaves the Django task intact."""
+    if anylogic_state is None:
+        return HTTPStatus.SERVICE_UNAVAILABLE, 'AnyLogic is unavailable'
+
+    cells = {cell['name']: cell['id'] for cell in anylogic_state.get('cells', [])}
+    try:
+        response = http_requests.delete(
+            f'{ANYLOGIC_URL}/order/{task.pk}',
+            params={
+                'orderNumber': task.anylogic_order_number,
+                'sourceCellId': cells.get(task.source_cell_name),
+                'destCellId': cells.get(task.dest_cell_name),
+            },
+            timeout=ANYLOGIC_ORDER_TIMEOUT_SECONDS,
+            proxies=HTTP_PROXIES,
+        )
+        result = response.json()
+    except (http_requests.RequestException, ValueError) as exc:
+        logger.warning("Could not confirm removal of AnyLogic task %s: %s", task.pk, exc)
+        return HTTPStatus.SERVICE_UNAVAILABLE, 'Could not confirm removal from AnyLogic'
+
+    if response.ok and isinstance(result, dict) and result.get('ok') is True:
+        return None
+    if isinstance(result, dict) and result.get('error') in {'not_pending', 'order_not_found'}:
+        return HTTPStatus.CONFLICT, 'Task is no longer waiting in AnyLogic'
+    return HTTPStatus.SERVICE_UNAVAILABLE, 'AnyLogic queue removal is unavailable'
+
+
 def _empty_anylogic_queue(anylogic_state):
     forklifts = anylogic_state.get('forklifts', [])
     return anylogic_state.get('pending') == 0 and bool(forklifts) and all(
@@ -318,7 +357,8 @@ def recover_missing_anylogic_orders(forklift_id, anylogic_state):
         return 0
 
     pending = Task.objects.filter(forklift_id=forklift_id, status=_TASK_PENDING)
-    missing = pending.filter(anylogic_order_number__gt=done)
+    cancelled = _cancelled_order_numbers(anylogic_state)
+    missing = pending.filter(anylogic_order_number__gt=done + len(cancelled)).exclude(anylogic_order_number__in=cancelled)
     if not missing.exists():
         return 0
 
@@ -374,10 +414,11 @@ def dispatch_task(task_id, anylogic_state):
         or (forklift.get('state') == _AL_DEFAULT_STATE and forklift.get('busy') is True)
         for forklift in forklifts
     )
-    order_number = done + pending + active + 1
+    order_number = done + pending + active + len(_cancelled_order_numbers(anylogic_state)) + 1
     try:
         response = http_requests.post(
             f'{ANYLOGIC_URL}/order',
+            params={'taskId': task.pk},
             json={
                 'sourceCellId': cells[task.source_cell_name],
                 'destCellId': cells[task.dest_cell_name],
@@ -398,6 +439,9 @@ def dispatch_task(task_id, anylogic_state):
         except ValueError:
             result = None
         if response.ok and isinstance(result, dict) and result.get('ok') is True:
+            confirmed_number = result.get('orderNumber')
+            if type(confirmed_number) is int and confirmed_number > 0:
+                order_number = confirmed_number
             logger.info("AnyLogic accepted task %s as order %s", task_id, order_number)
         elif isinstance(result, dict) and result.get('ok') is False:
             logger.warning("AnyLogic rejected task %s: %s", task_id, result.get('error'))

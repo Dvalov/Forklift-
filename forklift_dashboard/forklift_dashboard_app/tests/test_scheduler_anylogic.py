@@ -165,6 +165,51 @@ class AnyLogicSchedulerTests(TestCase):
         _tick_anylogic_mode(self.forklift, fetch_state.return_value)
         post.assert_called_once()
 
+    @patch('forklift_dashboard_app.scheduler._fetch_anylogic_state', return_value=None)
+    @patch('forklift_dashboard_app.scheduler.http_requests.delete')
+    def test_delete_unsent_pending_task_without_anylogic(self, delete, fetch_state):
+        task = Task.objects.create(**self._order_payload())
+
+        response = APIClient().delete(f'/api/tasks/{task.pk}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Task.objects.filter(pk=task.pk).exists())
+        delete.assert_not_called()
+
+    @patch('forklift_dashboard_app.scheduler._fetch_anylogic_state')
+    @patch('forklift_dashboard_app.scheduler.http_requests.delete')
+    def test_delete_waiting_order_without_shifting_following_task_statuses(self, delete, fetch_state):
+        waiting = Task.objects.create(**self._order_payload(), anylogic_order_number=2)
+        following = Task.objects.create(**self._order_payload(), anylogic_order_number=3)
+        fetch_state.return_value = self._state('GoToDest', pending=2, done=0)
+        delete.return_value.json.return_value = {'ok': True}
+
+        response = APIClient().delete(f'/api/tasks/{waiting.pk}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Task.objects.filter(pk=waiting.pk).exists())
+        self.assertTrue(delete.call_args.args[0].endswith(f'/order/{waiting.pk}'))
+        self.assertEqual(delete.call_args.kwargs['params']['orderNumber'], 2)
+
+        for state, done, expected in (('GoToSource', 1, 'in_progress'), ('Idle', 2, 'completed')):
+            snapshot = self._state(state, pending=0, done=done)
+            snapshot['cancelledOrders'] = [2]
+            _tick_anylogic_mode(self.forklift, snapshot)
+            following.refresh_from_db()
+            self.assertEqual(following.status, expected)
+
+    @patch('forklift_dashboard_app.scheduler._fetch_anylogic_state')
+    @patch('forklift_dashboard_app.scheduler.http_requests.delete')
+    def test_delete_retains_task_if_anylogic_has_already_started_it(self, delete, fetch_state):
+        task = Task.objects.create(**self._order_payload(), anylogic_order_number=1)
+        fetch_state.return_value = self._state('GoToSource', pending=0, done=0)
+        delete.return_value.json.return_value = {'ok': False, 'error': 'not_pending'}
+
+        response = APIClient().delete(f'/api/tasks/{task.pk}/')
+
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(Task.objects.filter(pk=task.pk).exists())
+
     @patch('forklift_dashboard_app.scheduler._fetch_anylogic_state')
     @patch('forklift_dashboard_app.scheduler.http_requests.post')
     def test_empty_queue_after_restart_restores_pending_orders_in_order(self, post, fetch_state):

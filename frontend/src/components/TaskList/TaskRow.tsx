@@ -1,7 +1,6 @@
 import type { Task } from '@/types/api'
 import { X, RotateCcw } from 'lucide-react'
 import TaskStatusDot from './TaskStatusDot'
-import { useCancelTask } from './useCancelTask'
 import { useDeleteTask } from './useDeleteTask'
 import { useRestoreTask } from './useRestoreTask'
 
@@ -19,23 +18,14 @@ const STATUS_LABEL: Record<Task['status'], string> = {
 }
 
 export default function TaskRow({ task, queuePosition }: TaskRowProps) {
-  const cancelMutation = useCancelTask()
   const deleteMutation = useDeleteTask()
   const restoreMutation = useRestoreTask()
 
-  const isBusy = cancelMutation.isPending || deleteMutation.isPending || restoreMutation.isPending
-
-  function handleX() {
-    if (task.status === 'pending') cancelMutation.mutate(task.id)
-    else if (task.status === 'cancelled') deleteMutation.mutate(task.id)
-  }
-
-  const showX = task.can_modify
+  const isBusy = deleteMutation.isPending || restoreMutation.isPending
+  const showX = task.status === 'pending' || task.status === 'cancelled'
   const showRestore = task.status === 'cancelled'
-  const isError = cancelMutation.isError || deleteMutation.isError || restoreMutation.isError
-  const errorText =
-    restoreMutation.isError ? 'Восстановление не удалось' :
-    task.status === 'pending' ? 'Отмена не удалась' : 'Удаление не удалось'
+  const isError = deleteMutation.isError || restoreMutation.isError
+  const errorText = restoreMutation.isError ? 'Восстановление не удалось' : 'Удаление не удалось'
 
   const srcLabel = task.source_cell_name || `${task.source_cell_x}·${task.source_cell_y}·${task.source_cell_z}`
   const dstLabel = task.dest_cell_name || `${task.dest_cell_x}·${task.dest_cell_y}·${task.dest_cell_z}`
@@ -92,13 +82,13 @@ export default function TaskRow({ task, queuePosition }: TaskRowProps) {
           )}
           {showX && (
             <button
-              aria-label={task.status === 'pending' ? `Отменить задачу ${task.id}` : `Удалить задачу ${task.id}`}
+              aria-label={`Удалить задачу ${task.id}`}
               disabled={isBusy}
-              onClick={handleX}
+              onClick={() => deleteMutation.mutate(task.id)}
               style={{ color: '#ff3366' }}
               className="p-1 rounded disabled:opacity-40 transition-colors hover:bg-[rgba(255,51,102,0.1)]"
             >
-              {(cancelMutation.isPending || deleteMutation.isPending) ? '…' : <X size={16} />}
+              {deleteMutation.isPending ? '…' : <X size={16} />}
             </button>
           )}
         </div>

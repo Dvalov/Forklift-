@@ -1,0 +1,234 @@
+--- a/Forklift.alp
++++ b/Forklift.alp
+@@ -877,7 +877,7 @@
+ 							<Code><![CDATA[1]]></Code>
+ 							<Unit Class="TimeUnits"><![CDATA[SECOND]]></Unit>
+ 						</Timeout>
+-						<Condition><![CDATA[chargeLevel >= 20]]></Condition>
++						<Condition><![CDATA[chargeLevel >= chargeThreshold && (orderAssigned || !main.pendingOrders.isEmpty())]]></Condition>
+ 						<Rate Class="CodeUnitValue">
+ 							<Code><![CDATA[1]]></Code>
+ 							<Unit Class="RateUnits"><![CDATA[PER_SECOND]]></Unit>
+@@ -903,7 +903,39 @@
+ 						<Point><X>-138</X><Y>185</Y></Point>
+ 					</Points>
+ 					<IconOffset>20.0</IconOffset>
+-					<Properties Source="1795782016912" Target="1790349910579" Trigger="timeout">
++					<Properties Source="1795782016912" Target="1794309155156" Trigger="timeout">
++						<Timeout Class="CodeUnitValue">
++							<Code><![CDATA[1]]></Code>
++							<Unit Class="TimeUnits"><![CDATA[SECOND]]></Unit>
++						</Timeout>
++						<Condition><![CDATA[chargeLevel < chargeThreshold]]></Condition>
++						<Rate Class="CodeUnitValue">
++							<Code><![CDATA[1]]></Code>
++							<Unit Class="RateUnits"><![CDATA[PER_SECOND]]></Unit>
++						</Rate>
++						<MessageType><![CDATA[Object]]></MessageType>
++						<DefaultTransition>false</DefaultTransition>
++						<FilterType><![CDATA[unconditionally]]></FilterType>
++						<EqualsExpression><![CDATA["text"]]></EqualsExpression>
++						<SatisfiesExpression><![CDATA[true]]></SatisfiesExpression>
++					</Properties>	
++				</StatechartElement>
++				<StatechartElement Class="Transition" ParentState="ROOT_NODE">
++					<Id>1795782222402</Id>
++					<Name><![CDATA[noPendingOrder]]></Name>
++					<X>671</X><Y>115</Y>
++					<Label><X>10</X><Y>0</Y></Label>
++					<PublicFlag>false</PublicFlag>
++					<PresentationFlag>true</PresentationFlag>
++					<ShowLabel>false</ShowLabel>
++					<Points>
++						<Point><X>0</X><Y>0</Y></Point>
++						<Point><X>69</X><Y>0</Y></Point>
++						<Point><X>69</X><Y>-55</Y></Point>
++						<Point><X>0</X><Y>-55</Y></Point>
++					</Points>
++					<IconOffset>15.0</IconOffset>
++					<Properties Source="1795782016912" Target="1788890580176" Trigger="timeout">
+ 						<Timeout Class="CodeUnitValue">
+ 							<Code><![CDATA[1]]></Code>
+ 							<Unit Class="TimeUnits"><![CDATA[SECOND]]></Unit>
+@@ -918,7 +950,7 @@
+ 						<FilterType><![CDATA[unconditionally]]></FilterType>
+ 						<EqualsExpression><![CDATA["text"]]></EqualsExpression>
+ 						<SatisfiesExpression><![CDATA[true]]></SatisfiesExpression>
+-					</Properties>	
++					</Properties>
+ 				</StatechartElement>
+ 			</StatechartElements>
+ 			<Events>
+@@ -1930,6 +1962,25 @@
+   }]]></AdditionalClassCode>
+ 			<StartupCode><![CDATA[ try {
+       server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(8080), 0);
++      java.util.Map<Long, Order> ordersByTaskId = new java.util.HashMap<>();
++      java.util.Set<Integer> cancelledOrders = new java.util.TreeSet<>();
++      java.util.function.BiFunction<java.net.URI, String, Long> readQueryNumber = (uri, name) -> {
++          String query = uri.getRawQuery();
++          if (query != null) {
++              for (String part : query.split("&")) {
++                  String prefix = name + "=";
++                  if (part.startsWith(prefix)) {
++                      try {
++                          return Long.parseLong(part.substring(prefix.length()));
++                      } catch (NumberFormatException ignored) {
++                          return -1L;
++                      }
++                  }
++              }
++          }
++          return -1L;
++      };
++
+       server.createContext("/state", ex -> {          if ("OPTIONS".equals(ex.getRequestMethod())) {
+               ex.getResponseHeaders().add("Access-Control-Allow-Origin", "*");              ex.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, OPTIONS");
+               ex.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
+@@ -1940,8 +1991,11 @@
+ 
+           StringBuilder sb = new StringBuilder();
+           sb.append("{\"time\":").append(time());
+-          sb.append(",\"pending\":").append(pendingOrders.size());
+-          sb.append(",\"done\":").append(orderCompletionTime.size());
++          synchronized (pendingOrders) {
++              sb.append(",\"pending\":").append(pendingOrders.size());
++              sb.append(",\"done\":").append(orderCompletionTime.size());
++              sb.append(",\"cancelledOrders\":").append(cancelledOrders);
++          }
+           sb.append(",\"forklifts\":[");
+           for (int i = 0; i < forklifts.size(); i++) {
+               Forklift f = forklifts.get(i);
+@@ -1998,14 +2052,75 @@
+           exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+ 
+           if ("OPTIONS".equals(exchange.getRequestMethod())) {
+-              exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "POST, OPTIONS");
++              exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS");
+               exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
+               exchange.sendResponseHeaders(204, -1);
+               exchange.close();
+               return;
+           }
+ 
+-          if (!"POST".equals(exchange.getRequestMethod())) {
++          String path = exchange.getRequestURI().getPath();
++          if ("DELETE".equals(exchange.getRequestMethod()) && path.matches("/order/[1-9][0-9]*")) {
++              long taskId;
++              try {
++                  taskId = Long.parseLong(path.substring("/order/".length()));
++              } catch (NumberFormatException e) {
++                  exchange.sendResponseHeaders(400, -1);
++                  exchange.close();
++                  return;
++              }
++              String result = "{\"ok\":false,\"error\":\"order_not_found\"}";
++              boolean resume = getEngine().pause();
++              try {
++                  synchronized (pendingOrders) {
++                      Order order = ordersByTaskId.get(taskId);
++                      if (order == null) {
++                          // Orders accepted by older clients do not carry a Django task ID.
++                          long number = readQueryNumber.apply(exchange.getRequestURI(), "orderNumber");
++                          long source = readQueryNumber.apply(exchange.getRequestURI(), "sourceCellId");
++                          long dest = readQueryNumber.apply(exchange.getRequestURI(), "destCellId");
++                          if (source >= 0 && dest >= 0
++                                  && source < storageCells.size() && dest < storageCells.size()) {
++                              int matches = 0;
++                              Order legacy = null;
++                              for (Order candidate : orders) {
++                                  if (candidate.source == storageCells.get((int) source)
++                                          && candidate.dest == storageCells.get((int) dest)
++                                          && !ordersByTaskId.containsValue(candidate)) {
++                                      matches++;
++                                      legacy = candidate;
++                                  }
++                              }
++                              if (matches == 0) {
++                                  result = "{\"ok\":true}";
++                              } else if (matches == 1 && number == orders.indexOf(legacy) + 1) {
++                                  order = legacy;
++                              }
++                          }
++                      }
++                      if (order != null) {
++                          int number = orders.indexOf(order) + 1;
++                          if (cancelledOrders.contains(number) || pendingOrders.remove(order)) {
++                              cancelledOrders.add(number);
++                              ordersByTaskId.put(taskId, order);
++                              result = "{\"ok\":true}";
++                          } else {
++                              result = "{\"ok\":false,\"error\":\"not_pending\"}";
++                          }
++                      }
++                  }
++              } finally {
++                  if (resume) getEngine().run();
++              }
++              byte[] bytes = result.getBytes(java.nio.charset.StandardCharsets.UTF_8);
++              exchange.getResponseHeaders().add("Content-Type", "application/json");
++              exchange.sendResponseHeaders(200, bytes.length);
++              exchange.getResponseBody().write(bytes);
++              exchange.close();
++              return;
++          }
++
++          if (!"POST".equals(exchange.getRequestMethod()) || !"/order".equals(path)) {
+               String err = "{\"ok\":false,\"error\":\"method not allowed\"}";
+               byte[] eb = err.getBytes("UTF-8");
+               exchange.getResponseHeaders().add("Content-Type", "application/json");
+@@ -2039,33 +2154,29 @@
+                       response = "{\"ok\":false,\"error\":\"cellId out of range\"}";
+                       getEngine().run();
+                   } else {
+-                      Order order = new Order();
+-                      order.source    = storageCells.get(srcId);
+-                      order.dest      = storageCells.get(dstId);
+-                      order.createdAt = time();
+-                      orders.add(order);
+-
+-                      Forklift free = null;
+-                      for (Forklift f : forklifts)
+-                          if (!f.isBusy) { free = f; break; }
+-
+-                      if (free != null && free.chargeLevel > 20) {
+-                      	free.assignOrder(order);
+-                      	traceln("assigned order");
++                      long taskId = readQueryNumber.apply(exchange.getRequestURI(), "taskId");
++                      synchronized (pendingOrders) {
++                          Order order = ordersByTaskId.get(taskId);
++                          if (order == null) {
++                              order = new Order();
++                              order.source = storageCells.get(srcId);
++                              order.dest = storageCells.get(dstId);
++                              order.createdAt = time();
++                              orders.add(order);
++                              if (taskId > 0) ordersByTaskId.put(taskId, order);
++                              pendingOrders.add(order);
++
++                              for (Forklift f : forklifts) {
++                                  if (!f.isBusy && "Idle".equals(String.valueOf(f.statechart.getActiveSimpleState()))) {
++                                      f.statechart.fireEvent("go");
++                                      break;
++                                  }
++                              }
++                          }
++
++                          response = "{\"ok\":true,\"orderNumber\":" + (orders.indexOf(order) + 1) + "}";
+                       }
+-                      else if (free != null && free.chargeLevel <= 20) {
+-                      	free.statechart.fireEvent("go");
+-                      	pendingOrders.add(order);
+-                      	traceln("added pending order");
+-                      	traceln("go");
+-                      }
+-                      else {
+-                      	pendingOrders.add(order);
+-                      	traceln("added pending order");
+-                      }
+-
+                       getEngine().run();
+-                      response = "{\"ok\":true}";
+                   }
+               } catch (Exception e) {
+                   getEngine().run();

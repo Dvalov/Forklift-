@@ -12,6 +12,7 @@ from django.shortcuts import get_object_or_404
 from .models import Forklift, Task
 from .scheduler import (
     anylogic_dispatch_state, dispatch_next_task, dispatch_task, recover_missing_anylogic_orders,
+    remove_anylogic_order,
 )
 from .serializers import (
     ForkliftSerializer, ForkliftUpdateSerializer, PositionUpdateSerializer,
@@ -230,21 +231,21 @@ class TaskViewSet(viewsets.ModelViewSet):
         except Exception:
             return Response({"error": "Task not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    @transaction.atomic
     def destroy(self, request, *args, **kwargs):
-        """Удаление задания (только pending или cancelled)"""
-        try:
+        with anylogic_dispatch_state() as anylogic_state, transaction.atomic():
             task = self.get_object()
+            if task.status not in {'pending', 'cancelled'}:
+                return Response({"error": "Can only delete pending or cancelled tasks"},
+                                status=status.HTTP_409_CONFLICT)
 
-            if not task.can_modify():
-                return Response({"error": "Can only delete unsent pending or cancelled tasks"},
-                                status=status.HTTP_400_BAD_REQUEST)
+            if task.anylogic_order_number is not None:
+                error = remove_anylogic_order(task, anylogic_state)
+                if error:
+                    status_code, message = error
+                    return Response({'error': message}, status=status_code)
 
             task.delete()
             return Response({'message': 'Task deleted successfully', 'id': kwargs['pk']})
-
-        except Exception:
-            return Response({"error": "Task not found"}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['post'], url_path='restore')
     def restore_task(self, request, pk=None):
